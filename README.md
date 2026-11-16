@@ -22,7 +22,7 @@ Telegram bot only for the first version (no Mini App). Users register with the a
 
 Send `/admin` to open the inline panel. Its buttons appear under the message. The previous panel message is deleted when you select a section. You can edit the referral link, promo code, and built-in Russian and English bot copy. The `/myid` command shows the Telegram ID required for `ADMIN_IDS`.
 
-The affiliate link should contain `sub1={click_id}` (or `{sub1}`). The bot substitutes a unique click ID for each user. Configure the postback message in the format `{sub1}|Firstdep|{amount}`; registration events may use `Registration` or `Reg`. Verify these labels and the returned `sub1` with test events before live use.
+The bot can accept the base affiliate link as shown in the 1win panel and automatically append a unique `sub1` for each user. If the URL template already contains `sub1={click_id}` (or `{sub1}`), it substitutes the unique ID there. Configure the postback message in the format `{sub1}|Firstdep|{amount}`; registration events may use `Registration` or `Reg`. Verify these labels and the returned `sub1` with test events before live use.
 
 ## Notes
 
