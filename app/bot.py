@@ -396,7 +396,7 @@ async def text_input_and_commands(message: Message, bot: Bot) -> None:
         kind, prompt_id, target_lang, key, category = pending
         value = message.text.strip()
         if kind == "link":
-            if not value.startswith(("https://", "http://")) or not ("{click_id}" in value or "{sub1}" in value):
+            if not value.startswith(("https://", "http://")):
                 await message.answer(t(lang, "admin_invalid_link"), reply_markup=cancel_keyboard(lang))
                 return
             await db.set_setting("referral_url", value)
