@@ -14,13 +14,13 @@ from aiogram.types import (
 from app.ai_analysis import analyze_screenshot
 from app.config import settings
 from app.db import db
-from app.texts import t, text_keys
+from app.texts import category_text_keys, t, text_categories, text_keys, text_label
 
 log = logging.getLogger(__name__)
 router = Router()
 
 # Pending admin input is intentionally in memory; a restart cancels unfinished edits.
-pending_admin_inputs: dict[int, tuple[str, int, str, str | None]] = {}
+pending_admin_inputs: dict[int, tuple[str, int, str, str | None, str | None]] = {}
 
 
 def main_keyboard(lang: str) -> InlineKeyboardMarkup:
@@ -62,18 +62,45 @@ def cancel_keyboard(lang: str) -> InlineKeyboardMarkup:
     ])
 
 
-def text_picker_keyboard(lang: str, text_lang: str) -> InlineKeyboardMarkup:
-    keys = text_keys()
+def text_category_keyboard(lang: str, text_lang: str) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(text=title, callback_data=f"admin:category:{text_lang}:{category}")]
+            for category, title in text_categories(lang)]
+    rows.append([InlineKeyboardButton(text=t(lang, "button_back"), callback_data="admin:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def text_picker_keyboard(lang: str, text_lang: str, category: str) -> InlineKeyboardMarkup:
+    keys = category_text_keys(category)
     rows = []
     for i in range(0, len(keys), 2):
         row = []
         for key in keys[i:i + 2]:
-            preview = " ".join(t(text_lang, key).split())[:20]
-            label = f"{key}: {preview}"[:60]
-            row.append(InlineKeyboardButton(text=label, callback_data=f"admin:edit:{text_lang}:{key}"))
+            label = text_label(lang, key)
+            row.append(InlineKeyboardButton(text=label[:60], callback_data=f"admin:view:{text_lang}:{key}:{category}"))
         rows.append(row)
-    rows.append([InlineKeyboardButton(text=t(lang, "button_back"), callback_data="admin:home")])
+    rows.append([InlineKeyboardButton(text=t(lang, "button_back"), callback_data=f"admin:texts:{text_lang}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def text_view_keyboard(lang: str, text_lang: str, key: str, category: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t(lang, "button_text_edit"), callback_data=f"admin:edit:{text_lang}:{key}:{category}")],
+        [InlineKeyboardButton(text=t(lang, "button_text_reset"), callback_data=f"admin:resetconfirm:{text_lang}:{key}:{category}")],
+        [InlineKeyboardButton(text=t(lang, "button_back"), callback_data=f"admin:category:{text_lang}:{category}")],
+    ])
+
+
+def reset_confirm_keyboard(lang: str, text_lang: str, key: str, category: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t(lang, "button_text_reset_yes"), callback_data=f"admin:reset:{text_lang}:{key}:{category}")],
+        [InlineKeyboardButton(text=t(lang, "button_text_reset_no"), callback_data=f"admin:view:{text_lang}:{key}:{category}")],
+    ])
+
+
+def text_view_message(lang: str, text_lang: str, key: str) -> str:
+    label = text_label(lang, key)
+    current = t(text_lang, key)
+    return t(lang, "admin_text_preview").format(label=label, current=current[:3500])
 
 
 async def user_language(user_id: int) -> str:
@@ -219,18 +246,44 @@ async def admin_callback(callback: CallbackQuery, bot: Bot) -> None:
     elif action == "settings":
         await bot.send_message(user_id, t(lang, "admin_choose_setting"), reply_markup=settings_keyboard(lang))
     elif action == "texts" and len(parts) == 3 and parts[2] in ("ru", "en"):
-        await bot.send_message(user_id, t(lang, "admin_choose_text"), reply_markup=text_picker_keyboard(lang, parts[2]))
+        await bot.send_message(user_id, t(lang, "admin_choose_category"), reply_markup=text_category_keyboard(lang, parts[2]))
+    elif action == "category" and len(parts) == 4 and parts[2] in ("ru", "en"):
+        valid_categories = {category for category, _ in text_categories(lang)}
+        if parts[3] in valid_categories:
+            await bot.send_message(
+                user_id,
+                t(lang, "admin_choose_text"),
+                reply_markup=text_picker_keyboard(lang, parts[2], parts[3]),
+            )
+    elif action == "view" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in text_keys():
+        await bot.send_message(
+            user_id,
+            text_view_message(lang, parts[2], parts[3]),
+            reply_markup=text_view_keyboard(lang, parts[2], parts[3], parts[4]),
+        )
     elif action == "input" and len(parts) == 3 and parts[2] in ("link", "promo"):
         input_kind = parts[2]
         key = "admin_edit_link_prompt" if input_kind == "link" else "admin_edit_promo_prompt"
         prompt = await bot.send_message(user_id, t(lang, key), reply_markup=cancel_keyboard(lang))
-        pending_admin_inputs[user_id] = (input_kind, prompt.message_id, lang, None)
-    elif action == "edit" and len(parts) == 4 and parts[2] in ("ru", "en") and parts[3] in text_keys():
-        text_lang, key = parts[2], parts[3]
-        current = t(text_lang, key)
-        prompt_text = t(lang, "admin_edit_text_prompt").format(current=current)
-        prompt = await bot.send_message(user_id, prompt_text, reply_markup=cancel_keyboard(lang))
-        pending_admin_inputs[user_id] = ("text", prompt.message_id, text_lang, key)
+        pending_admin_inputs[user_id] = (input_kind, prompt.message_id, lang, None, None)
+    elif action == "edit" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in text_keys():
+        text_lang, key, category = parts[2], parts[3], parts[4]
+        prompt = await bot.send_message(user_id, t(lang, "admin_text_edit_prompt"), reply_markup=cancel_keyboard(lang))
+        pending_admin_inputs[user_id] = ("text", prompt.message_id, text_lang, key, category)
+    elif action == "resetconfirm" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in text_keys():
+        await bot.send_message(
+            user_id,
+            t(lang, "admin_text_reset_confirm"),
+            reply_markup=reset_confirm_keyboard(lang, parts[2], parts[3], parts[4]),
+        )
+    elif action == "reset" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in text_keys():
+        text_lang, key, category = parts[2], parts[3], parts[4]
+        await db.clear_text(text_lang, key)
+        await bot.send_message(
+            user_id,
+            t(lang, "admin_text_reset_done") + "\n\n" + text_view_message(lang, text_lang, key),
+            reply_markup=text_view_keyboard(lang, text_lang, key, category),
+        )
     elif action == "cancel":
         pending_admin_inputs.pop(user_id, None)
         await bot.send_message(user_id, t(lang, "admin_cancelled"), reply_markup=admin_keyboard(lang))
@@ -340,7 +393,7 @@ async def text_input_and_commands(message: Message, bot: Bot) -> None:
         if not is_admin(user_id):
             pending_admin_inputs.pop(user_id, None)
             return
-        kind, prompt_id, target_lang, key = pending
+        kind, prompt_id, target_lang, key, category = pending
         value = message.text.strip()
         if kind == "link":
             if not value.startswith(("https://", "http://")) or not ("{click_id}" in value or "{sub1}" in value):
@@ -360,7 +413,14 @@ async def text_input_and_commands(message: Message, bot: Bot) -> None:
             await bot.delete_message(user_id, prompt_id)
         except Exception:
             pass
-        await bot.send_message(user_id, t(lang, "admin_saved"), reply_markup=admin_keyboard(lang))
+        if kind == "text" and key and category:
+            await bot.send_message(
+                user_id,
+                t(lang, "admin_saved") + "\n\n" + text_view_message(lang, target_lang, key),
+                reply_markup=text_view_keyboard(lang, target_lang, key, category),
+            )
+        else:
+            await bot.send_message(user_id, t(lang, "admin_saved"), reply_markup=settings_keyboard(lang))
         return
 
     text = message.text
