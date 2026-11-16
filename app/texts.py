@@ -37,9 +37,22 @@ TEXTS = {
         "button_set_link": "🔗 Изменить ссылку",
         "button_set_promo": "🏷 Изменить промокод",
         "button_cancel": "Отмена",
+        "button_text_edit": "✏️ Изменить текст",
+        "button_text_reset": "↩️ Вернуть стандартный",
+        "button_text_reset_yes": "Да, вернуть стандартный",
+        "button_text_reset_no": "Нет, оставить как есть",
         "admin_panel": "Панель администратора. Выберите раздел:",
         "admin_choose_setting": "Что изменить?",
-        "admin_choose_text": "Выберите текст для редактирования. В кнопках показаны ключ и начало текущего текста:",
+        "admin_choose_category": "Сначала выберите категорию текстов:",
+        "admin_choose_text": "Выберите сообщение, чтобы посмотреть его целиком:",
+        "admin_text_preview": "{label}\n\nТекущий текст:\n{current}",
+        "admin_text_edit_prompt": "Отправьте новый вариант текста одним сообщением. Переносы строк сохраняются.",
+        "admin_text_reset_confirm": "Вернуть для этого сообщения стандартный текст? Ваш текущий вариант будет удалён.",
+        "admin_text_reset_done": "Стандартный текст восстановлен.",
+        "text_group_messages": "💬 Сообщения пользователям",
+        "text_group_buttons": "🔘 Кнопки и меню",
+        "text_group_affiliate": "🔗 Регистрация и партнёрская ссылка",
+        "text_group_admin": "⚙️ Тексты админ-панели",
         "admin_edit_link_prompt": "Отправьте новую партнёрскую ссылку. В ней должен быть параметр sub1={click_id} или {sub1}.",
         "admin_edit_promo_prompt": "Отправьте новый промокод. Чтобы убрать промокод, отправьте дефис: -",
         "admin_edit_text_prompt": "Текущий текст:\n{current}\n\nОтправьте новое сообщение с текстом. Переносы строк сохраняются.",
@@ -87,9 +100,22 @@ TEXTS = {
         "button_set_link": "🔗 Change link",
         "button_set_promo": "🏷 Change promo code",
         "button_cancel": "Cancel",
+        "button_text_edit": "✏️ Edit text",
+        "button_text_reset": "↩️ Restore default",
+        "button_text_reset_yes": "Yes, restore default",
+        "button_text_reset_no": "No, keep current text",
         "admin_panel": "Admin panel. Choose a section:",
         "admin_choose_setting": "What would you like to change?",
-        "admin_choose_text": "Choose text to edit. Buttons show the key and the beginning of the current text:",
+        "admin_choose_category": "First choose a text category:",
+        "admin_choose_text": "Choose a message to preview it in full:",
+        "admin_text_preview": "{label}\n\nCurrent text:\n{current}",
+        "admin_text_edit_prompt": "Send the replacement text in one message. Line breaks are preserved.",
+        "admin_text_reset_confirm": "Restore the default text for this message? Your custom version will be removed.",
+        "admin_text_reset_done": "The default text has been restored.",
+        "text_group_messages": "💬 User messages",
+        "text_group_buttons": "🔘 Buttons and menus",
+        "text_group_affiliate": "🔗 Registration and affiliate link",
+        "text_group_admin": "⚙️ Admin panel text",
         "admin_edit_link_prompt": "Send the new affiliate link. It must contain sub1={click_id} or {sub1}.",
         "admin_edit_promo_prompt": "Send the new promo code. To clear it, send a hyphen: -",
         "admin_edit_text_prompt": "Current text:\n{current}\n\nSend a new message with the replacement text. Line breaks are preserved.",
@@ -117,8 +143,97 @@ def set_custom_text(language: str, key: str, value: str) -> None:
         CUSTOM_TEXTS[language][key] = value
 
 
+def clear_custom_text(language: str, key: str) -> None:
+    if language in CUSTOM_TEXTS:
+        CUSTOM_TEXTS[language].pop(key, None)
+
+
 def text_keys() -> list[str]:
     return list(TEXTS["ru"].keys())
+
+
+TEXT_CATEGORIES = {
+    "user_messages": [
+        "welcome", "menu", "instruction", "need_registration", "need_deposit",
+        "send_image", "limit", "analyzing", "analysis_error", "image_only", "risk",
+        "registered", "activated", "choose_language",
+    ],
+    "buttons": [
+        "button_instruction", "button_language", "button_signal", "button_register",
+        "language_russian", "language_english", "button_back", "button_cancel",
+        "button_admin", "button_admin_settings", "button_edit_ru", "button_edit_en",
+        "button_set_link", "button_set_promo", "button_text_edit", "button_text_reset",
+    ],
+    "affiliate": [
+        "promo_prefix", "no_promo", "no_link", "referral_unset", "promo_unset",
+        "set_referral_usage", "set_promo_usage",
+        "admin_edit_link_prompt", "admin_edit_promo_prompt", "admin_invalid_link",
+    ],
+}
+
+TEXT_LABELS = {
+    "ru": {
+        "welcome": "Приветствие", "menu": "Заголовок главного меню", "instruction": "Инструкция",
+        "choose_language": "Приглашение выбрать язык", "need_registration": "Текст перед регистрацией",
+        "need_deposit": "Текст после регистрации, до депозита", "send_image": "Приглашение отправить скриншот",
+        "no_link": "Сообщение, если ссылка не задана", "limit": "Лимит анализов исчерпан",
+        "analyzing": "Сообщение во время анализа", "analysis_error": "Ошибка анализа",
+        "image_only": "Подсказка о формате изображения", "risk": "Предупреждение о риске",
+        "registered": "Подтверждение регистрации", "activated": "Подтверждение депозита",
+        "button_instruction": "Кнопка инструкции", "button_language": "Кнопка выбора языка",
+        "button_signal": "Кнопка запроса сигнала", "button_register": "Кнопка регистрации",
+        "language_russian": "Язык: русский", "language_english": "Язык: английский",
+        "button_back": "Кнопка назад", "button_cancel": "Кнопка отмены",
+        "button_admin": "Кнопка админ-панели", "button_admin_settings": "Кнопка настроек партнёрки",
+        "button_edit_ru": "Кнопка русских текстов", "button_edit_en": "Кнопка английских текстов",
+        "button_set_link": "Кнопка изменения ссылки", "button_set_promo": "Кнопка изменения промокода",
+        "button_text_edit": "Кнопка изменения текста", "button_text_reset": "Кнопка возврата стандартного текста",
+        "button_text_reset_yes": "Подтверждение сброса текста", "button_text_reset_no": "Отмена сброса текста",
+        "promo_prefix": "Подпись перед промокодом", "no_promo": "Текст без промокода",
+        "no_link": "Сообщение, если ссылка не задана", "referral_unset": "Ответ админа: ссылка не задана",
+        "promo_unset": "Ответ админа: промокод не задан", "set_referral_usage": "Подсказка команды смены ссылки",
+        "set_promo_usage": "Подсказка команды смены промокода", "admin_edit_link_prompt": "Запрос новой ссылки",
+        "admin_edit_promo_prompt": "Запрос нового промокода", "admin_invalid_link": "Ошибка формата ссылки",
+    },
+    "en": {
+        "welcome": "Welcome message", "menu": "Main menu heading", "instruction": "Instructions",
+        "choose_language": "Language selection prompt", "need_registration": "Before registration",
+        "need_deposit": "After registration, before deposit", "send_image": "Request for a screenshot",
+        "no_link": "Message when no link is set", "limit": "Daily analysis limit reached",
+        "analyzing": "Analysis in progress", "analysis_error": "Analysis error",
+        "image_only": "Image format hint", "risk": "Risk warning", "registered": "Registration confirmation",
+        "activated": "Deposit confirmation", "button_instruction": "Instructions button",
+        "button_language": "Language button", "button_signal": "Request analysis button",
+        "button_register": "Registration button", "language_russian": "Russian language option",
+        "language_english": "English language option", "button_back": "Back button",
+        "button_cancel": "Cancel button", "button_admin": "Admin panel button",
+        "button_admin_settings": "Affiliate settings button", "button_edit_ru": "Russian texts button",
+        "button_edit_en": "English texts button", "button_set_link": "Change link button",
+        "button_set_promo": "Change promo button", "button_text_edit": "Edit text button",
+        "button_text_reset": "Restore default text button", "promo_prefix": "Promo code label",
+        "button_text_reset_yes": "Confirm restore text", "button_text_reset_no": "Cancel text restore",
+        "no_promo": "Message when no promo is set", "referral_unset": "Admin: link not set",
+        "promo_unset": "Admin: promo not set", "set_referral_usage": "Set link command hint",
+        "set_promo_usage": "Set promo command hint", "admin_edit_link_prompt": "New link prompt",
+        "admin_edit_promo_prompt": "New promo prompt", "admin_invalid_link": "Invalid link format message",
+    },
+}
+
+
+def text_categories(lang: str) -> list[tuple[str, str]]:
+    language = lang if lang in TEXTS else "ru"
+    return [(key, t(language, f"text_group_{key}")) for key in (*TEXT_CATEGORIES.keys(), "admin")]
+
+
+def category_text_keys(category: str) -> list[str]:
+    groups = {key: list(values) for key, values in TEXT_CATEGORIES.items()}
+    groups["admin"] = [key for key in text_keys() if not any(key in values for values in groups.values())]
+    return [key for key in groups.get(category, []) if key in TEXTS["ru"]]
+
+
+def text_label(lang: str, key: str) -> str:
+    language = lang if lang in TEXT_LABELS else "ru"
+    return TEXT_LABELS[language].get(key, key.replace("_", " ").capitalize())
 
 
 def t(lang: str, key: str) -> str:
