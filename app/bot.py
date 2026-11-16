@@ -8,34 +8,72 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    KeyboardButton,
     Message,
-    ReplyKeyboardMarkup,
 )
 
 from app.ai_analysis import analyze_screenshot
 from app.config import settings
 from app.db import db
-from app.texts import t
+from app.texts import t, text_keys
 
 log = logging.getLogger(__name__)
 router = Router()
 
-def main_keyboard(lang: str) -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=t(lang, "button_instruction")), KeyboardButton(text=t(lang, "button_language"))],
-            [KeyboardButton(text=t(lang, "button_signal"))],
-        ],
-        resize_keyboard=True,
-    )
+# Pending admin input is intentionally in memory; a restart cancels unfinished edits.
+pending_admin_inputs: dict[int, tuple[str, int, str, str | None]] = {}
+
+
+def main_keyboard(lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t(lang, "button_instruction"), callback_data="menu:instruction"),
+         InlineKeyboardButton(text=t(lang, "button_language"), callback_data="menu:language")],
+        [InlineKeyboardButton(text=t(lang, "button_signal"), callback_data="menu:signal")],
+    ])
 
 
 def language_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=t(lang, "language_russian"), callback_data="lang:ru"),
-         InlineKeyboardButton(text=t(lang, "language_english"), callback_data="lang:en")]
+         InlineKeyboardButton(text=t(lang, "language_english"), callback_data="lang:en")],
+        [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="menu:home")],
     ])
+
+
+def admin_keyboard(lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t(lang, "button_admin_settings"), callback_data="admin:settings")],
+        [InlineKeyboardButton(text=t(lang, "button_edit_ru"), callback_data="admin:texts:ru"),
+         InlineKeyboardButton(text=t(lang, "button_edit_en"), callback_data="admin:texts:en")],
+        [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="menu:home")],
+    ])
+
+
+def settings_keyboard(lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t(lang, "button_set_link"), callback_data="admin:input:link")],
+        [InlineKeyboardButton(text=t(lang, "button_set_promo"), callback_data="admin:input:promo")],
+        [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="admin:home")],
+    ])
+
+
+def cancel_keyboard(lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t(lang, "button_cancel"), callback_data="admin:cancel")]
+    ])
+
+
+def text_picker_keyboard(lang: str, text_lang: str) -> InlineKeyboardMarkup:
+    keys = text_keys()
+    rows = []
+    for i in range(0, len(keys), 2):
+        row = []
+        for key in keys[i:i + 2]:
+            preview = " ".join(t(text_lang, key).split())[:20]
+            label = f"{key}: {preview}"[:60]
+            row.append(InlineKeyboardButton(text=label, callback_data=f"admin:edit:{text_lang}:{key}"))
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text=t(lang, "button_back"), callback_data="admin:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def user_language(user_id: int) -> str:
@@ -43,14 +81,27 @@ async def user_language(user_id: int) -> str:
     return row["language"] if row else "ru"
 
 
-def admin(user_id: int) -> bool:
+def is_admin(user_id: int) -> bool:
     return user_id in settings.admin_ids
+
+
+async def safe_delete(message: Message | None) -> None:
+    if not message:
+        return
+    try:
+        await message.delete()
+    except Exception:
+        log.debug("Could not delete previous bot message", exc_info=True)
+
+
+async def send_home(bot: Bot, user_id: int, lang: str) -> None:
+    await bot.send_message(user_id, t(lang, "welcome") + "\n\n" + t(lang, "menu"), reply_markup=main_keyboard(lang))
 
 
 async def referral_button(user_id: int, lang: str):
     base = await db.get_setting("referral_url")
     if not base:
-        return None, None
+        return None
     click_id = await db.create_referral(user_id)
     encoded = quote(click_id, safe="")
     if "{click_id}" in base:
@@ -60,9 +111,28 @@ async def referral_button(user_id: int, lang: str):
     else:
         separator = "&" if "?" in base else "?"
         url = f"{base}{separator}sub1={encoded}"
-    label = "Зарегистрироваться" if lang == "ru" else "Register"
-    markup = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label, url=url)]])
-    return markup, click_id
+    label = t(lang, "button_register")
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=label, url=url)],
+        [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="menu:home")],
+    ])
+
+
+async def show_signal_gate(bot: Bot, user_id: int, lang: str) -> None:
+    user = await db.get_user(user_id)
+    if user and user["deposited"]:
+        await bot.send_message(user_id, t(lang, "send_image"), reply_markup=main_keyboard(lang))
+        return
+    if user and user["registered"]:
+        await bot.send_message(user_id, t(lang, "need_deposit"), reply_markup=main_keyboard(lang))
+        return
+    markup = await referral_button(user_id, lang)
+    if not markup:
+        await bot.send_message(user_id, t(lang, "no_link"), reply_markup=main_keyboard(lang))
+        return
+    promo = (await db.get_setting("promo")) or ""
+    promo_line = f"\n\n{t(lang, 'promo_prefix')}{promo}" if promo else ""
+    await bot.send_message(user_id, t(lang, "need_registration") + promo_line, reply_markup=markup)
 
 
 @router.message(CommandStart())
@@ -74,55 +144,50 @@ async def start(message: Message) -> None:
     await message.answer(t(lang, "welcome") + "\n\n" + t(lang, "menu"), reply_markup=main_keyboard(lang))
 
 
+@router.message(Command("myid"))
+async def my_id(message: Message) -> None:
+    if not message.from_user:
+        return
+    lang = await user_language(message.from_user.id)
+    await message.answer(t(lang, "admin_id_reply").format(user_id=message.from_user.id))
+
+
 @router.message(Command("admin"))
-async def admin_help(message: Message) -> None:
-    if message.from_user and admin(message.from_user.id):
-        await message.answer(t(await user_language(message.from_user.id), "admin_help"))
-
-
-@router.message(Command("set_referral"))
-async def set_referral(message: Message) -> None:
-    if not message.from_user or not admin(message.from_user.id):
+async def open_admin(message: Message) -> None:
+    if not message.from_user:
         return
-    value = (message.text or "").partition(" ")[2].strip()
-    if not value or not value.startswith(("https://", "http://")):
-        await message.answer(t(await user_language(message.from_user.id), "set_referral_usage"))
+    if not is_admin(message.from_user.id):
+        await message.answer(t(await user_language(message.from_user.id), "admin_forbidden"))
         return
-    await db.set_setting("referral_url", value)
-    await message.answer(t(await user_language(message.from_user.id), "saved"))
+    lang = await user_language(message.from_user.id)
+    await message.answer(t(lang, "admin_panel"), reply_markup=admin_keyboard(lang))
 
 
-@router.message(Command("set_promo"))
-async def set_promo(message: Message) -> None:
-    if not message.from_user or not admin(message.from_user.id):
+@router.callback_query(F.data.startswith("menu:"))
+async def menu_callback(callback: CallbackQuery, bot: Bot) -> None:
+    if not callback.from_user or not callback.data:
+        await callback.answer()
         return
-    value = (message.text or "").partition(" ")[2].strip()
-    if not value:
-        await message.answer(t(await user_language(message.from_user.id), "set_promo_usage"))
-        return
-    await db.set_setting("promo", "" if value == "-" else value)
-    await message.answer(t(await user_language(message.from_user.id), "saved"))
-
-
-@router.message(Command("get_referral"))
-async def get_referral(message: Message) -> None:
-    if not message.from_user or not admin(message.from_user.id):
-        return
-    value = await db.get_setting("referral_url")
-    await message.answer(value or t(await user_language(message.from_user.id), "referral_unset"))
-
-
-@router.message(Command("get_promo"))
-async def get_promo(message: Message) -> None:
-    if not message.from_user or not admin(message.from_user.id):
-        return
-    value = await db.get_setting("promo")
-    await message.answer(value or t(await user_language(message.from_user.id), "promo_unset"))
+    user_id = callback.from_user.id
+    await db.ensure_user(user_id)
+    lang = await user_language(user_id)
+    action = callback.data.split(":", 1)[1]
+    await safe_delete(callback.message)
+    if action == "home":
+        await send_home(bot, user_id, lang)
+    elif action == "instruction":
+        await bot.send_message(user_id, t(lang, "instruction"), reply_markup=main_keyboard(lang))
+    elif action == "language":
+        await bot.send_message(user_id, t(lang, "choose_language"), reply_markup=language_keyboard(lang))
+    elif action == "signal":
+        await show_signal_gate(bot, user_id, lang)
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("lang:"))
-async def choose_language(callback: CallbackQuery) -> None:
-    if not callback.from_user:
+async def choose_language(callback: CallbackQuery, bot: Bot) -> None:
+    if not callback.from_user or not callback.data:
+        await callback.answer()
         return
     lang = callback.data.partition(":")[2]
     if lang not in ("ru", "en"):
@@ -130,56 +195,63 @@ async def choose_language(callback: CallbackQuery) -> None:
         return
     await db.ensure_user(callback.from_user.id)
     await db.set_language(callback.from_user.id, lang)
-    if callback.message:
-        await callback.message.answer(t(lang, "welcome") + "\n\n" + t(lang, "menu"), reply_markup=main_keyboard(lang))
+    await safe_delete(callback.message)
+    await send_home(bot, callback.from_user.id, lang)
     await callback.answer()
 
 
-@router.message(F.text)
-async def menu_text(message: Message) -> None:
-    if not message.from_user or not message.text:
+@router.callback_query(F.data.startswith("admin:"))
+async def admin_callback(callback: CallbackQuery, bot: Bot) -> None:
+    if not callback.from_user or not callback.data:
+        await callback.answer()
         return
-    await db.ensure_user(message.from_user.id)
-    lang = await user_language(message.from_user.id)
-    text = message.text
-    if text in (t(lang, "button_instruction"), "/instruction"):
-        await message.answer(t(lang, "instruction"), reply_markup=main_keyboard(lang))
-    elif text in (t(lang, "button_language"), "/language"):
-        await message.answer(t(lang, "choose_language"), reply_markup=language_keyboard(lang))
-    elif text in (t(lang, "button_signal"), "/signal"):
-        await show_signal_gate(message, lang)
+    user_id = callback.from_user.id
+    if not is_admin(user_id):
+        await callback.answer(t(await user_language(user_id), "admin_forbidden"), show_alert=True)
+        return
+    lang = await user_language(user_id)
+    parts = callback.data.split(":")
+    action = parts[1]
+    await safe_delete(callback.message)
 
-
-async def show_signal_gate(message: Message, lang: str) -> None:
-    user = await db.get_user(message.from_user.id)
-    if user and user["deposited"]:
-        await message.answer(t(lang, "send_image"), reply_markup=main_keyboard(lang))
-        return
-    if user and user["registered"]:
-        await message.answer(t(lang, "need_deposit"), reply_markup=main_keyboard(lang))
-        return
-    markup, _ = await referral_button(message.from_user.id, lang)
-    if not markup:
-        await message.answer(t(lang, "no_link"), reply_markup=main_keyboard(lang))
-        return
-    promo = (await db.get_setting("promo")) or ""
-    promo_line = f"\n\n{('Промокод: ' if lang == 'ru' else 'Promo code: ')}{promo}" if promo else ""
-    await message.answer(t(lang, "need_registration") + promo_line, reply_markup=markup)
+    if action == "home":
+        await bot.send_message(user_id, t(lang, "admin_panel"), reply_markup=admin_keyboard(lang))
+    elif action == "settings":
+        await bot.send_message(user_id, t(lang, "admin_choose_setting"), reply_markup=settings_keyboard(lang))
+    elif action == "texts" and len(parts) == 3 and parts[2] in ("ru", "en"):
+        await bot.send_message(user_id, t(lang, "admin_choose_text"), reply_markup=text_picker_keyboard(lang, parts[2]))
+    elif action == "input" and len(parts) == 3 and parts[2] in ("link", "promo"):
+        input_kind = parts[2]
+        key = "admin_edit_link_prompt" if input_kind == "link" else "admin_edit_promo_prompt"
+        prompt = await bot.send_message(user_id, t(lang, key), reply_markup=cancel_keyboard(lang))
+        pending_admin_inputs[user_id] = (input_kind, prompt.message_id, lang, None)
+    elif action == "edit" and len(parts) == 4 and parts[2] in ("ru", "en") and parts[3] in text_keys():
+        text_lang, key = parts[2], parts[3]
+        current = t(text_lang, key)
+        prompt_text = t(lang, "admin_edit_text_prompt").format(current=current)
+        prompt = await bot.send_message(user_id, prompt_text, reply_markup=cancel_keyboard(lang))
+        pending_admin_inputs[user_id] = ("text", prompt.message_id, text_lang, key)
+    elif action == "cancel":
+        pending_admin_inputs.pop(user_id, None)
+        await bot.send_message(user_id, t(lang, "admin_cancelled"), reply_markup=admin_keyboard(lang))
+    await callback.answer()
 
 
 @router.message(F.photo)
 async def photo_analysis(message: Message, bot: Bot) -> None:
-    await process_image(message, bot, message.photo[-1].file_id)
+    if message.photo:
+        await process_image(message, bot, message.photo[-1].file_id)
 
 
 @router.message(F.document)
 async def document_analysis(message: Message, bot: Bot) -> None:
+    if not message.from_user:
+        return
     doc = message.document
     if doc and doc.mime_type and doc.mime_type.startswith("image/"):
         await process_image(message, bot, doc.file_id)
     else:
-        lang = await user_language(message.from_user.id)
-        await message.answer(t(lang, "image_only"))
+        await message.answer(t(await user_language(message.from_user.id), "image_only"))
 
 
 async def process_image(message: Message, bot: Bot, file_id: str) -> None:
@@ -188,15 +260,15 @@ async def process_image(message: Message, bot: Bot, file_id: str) -> None:
     user_id = message.from_user.id
     await db.ensure_user(user_id)
     lang = await user_language(user_id)
-    allowed, used, analysis_id = await db.reserve_analysis(user_id, settings.daily_analysis_limit)
+    allowed, _, analysis_id = await db.reserve_analysis(user_id, settings.daily_analysis_limit)
     if not allowed:
         user = await db.get_user(user_id)
         if user and user["deposited"]:
-            await message.answer(t(lang, "limit"))
+            await message.answer(t(lang, "limit"), reply_markup=main_keyboard(lang))
         elif user and user["registered"]:
-            await message.answer(t(lang, "need_deposit"))
+            await message.answer(t(lang, "need_deposit"), reply_markup=main_keyboard(lang))
         else:
-            await show_signal_gate(message, lang)
+            await show_signal_gate(bot, user_id, lang)
         return
     status = await message.answer(t(lang, "analyzing"))
     try:
@@ -211,11 +283,12 @@ async def process_image(message: Message, bot: Bot, file_id: str) -> None:
         elif file_info.file_path.lower().endswith(".webp"):
             mime = "image/webp"
         result = await analyze_screenshot(image_data, mime, lang)
-        await status.edit_text(result[:4000] + "\n\n" + t(lang, "risk"))
+        await status.edit_text(result[:4000] + "\n\n" + t(lang, "risk"), reply_markup=main_keyboard(lang))
     except Exception:
         log.exception("Screenshot analysis failed for user %s", user_id)
-        await db.rollback_analysis(analysis_id)
-        await status.edit_text(t(lang, "analysis_error"))
+        if analysis_id is not None:
+            await db.rollback_analysis(analysis_id)
+        await status.edit_text(t(lang, "analysis_error"), reply_markup=main_keyboard(lang))
 
 
 def parse_postback(text: str) -> tuple[str, str] | None:
@@ -251,7 +324,52 @@ async def postback_channel_post(message: Message, bot: Bot) -> None:
     user = await db.get_user(user_id)
     lang = user["language"] if user else "ru"
     is_deposit = any(term in event.lower() for term in ("firstdep", "deposit", "dep"))
-    await bot.send_message(user_id, t(lang, "activated" if is_deposit else "registered"))
+    await bot.send_message(user_id, t(lang, "activated" if is_deposit else "registered"), reply_markup=main_keyboard(lang))
+
+
+@router.message(F.text)
+async def text_input_and_commands(message: Message, bot: Bot) -> None:
+    if not message.from_user or not message.text:
+        return
+    user_id = message.from_user.id
+    await db.ensure_user(user_id)
+    lang = await user_language(user_id)
+
+    pending = pending_admin_inputs.get(user_id)
+    if pending:
+        if not is_admin(user_id):
+            pending_admin_inputs.pop(user_id, None)
+            return
+        kind, prompt_id, target_lang, key = pending
+        value = message.text.strip()
+        if kind == "link":
+            if not value.startswith(("https://", "http://")) or not ("{click_id}" in value or "{sub1}" in value):
+                await message.answer(t(lang, "admin_invalid_link"), reply_markup=cancel_keyboard(lang))
+                return
+            await db.set_setting("referral_url", value)
+        elif kind == "promo":
+            await db.set_setting("promo", "" if value == "-" else value)
+        elif kind == "text" and target_lang in ("ru", "en") and key in text_keys():
+            await db.set_text(target_lang, key, message.text)
+        pending_admin_inputs.pop(user_id, None)
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        try:
+            await bot.delete_message(user_id, prompt_id)
+        except Exception:
+            pass
+        await bot.send_message(user_id, t(lang, "admin_saved"), reply_markup=admin_keyboard(lang))
+        return
+
+    text = message.text
+    if text in ("/instruction", "Инструкция", "Instructions"):
+        await message.answer(t(lang, "instruction"), reply_markup=main_keyboard(lang))
+    elif text in ("/language", "Язык", "Language"):
+        await message.answer(t(lang, "choose_language"), reply_markup=language_keyboard(lang))
+    elif text in ("/signal", "Получить сигнал", "Get analysis"):
+        await show_signal_gate(bot, user_id, lang)
 
 
 def create_dispatcher() -> Dispatcher:
