@@ -5,7 +5,7 @@ import asyncio
 import aiosqlite
 
 from app.config import settings
-from app.texts import load_custom_texts, set_custom_text
+from app.texts import clear_custom_text, load_custom_texts, set_custom_text
 
 
 class Database:
@@ -118,6 +118,14 @@ class Database:
             """, (language, key, value))
             await self._connection().commit()
         set_custom_text(language, key, value)
+
+    async def clear_text(self, language: str, key: str) -> None:
+        async with self.lock:
+            await self._connection().execute(
+                "DELETE FROM texts WHERE language=? AND key=?", (language, key)
+            )
+            await self._connection().commit()
+        clear_custom_text(language, key)
 
     async def activate_event(self, click_id: str, event: str) -> tuple[int, bool] | None:
         event_l = event.strip().lower()
