@@ -17,7 +17,7 @@ TEXTS = {
         "choose_language": "Выберите язык / Choose language:",
         "need_registration": "Чтобы открыть анализ, сначала зарегистрируйтесь в 1win по персональной ссылке. Используйте промокод, если он указан ниже. Доступ активируется после подтверждения регистрации и первого депозита любого размера.",
         "need_deposit": "Следующий этап — первый депозит любого размера. Внесите его по партнёрской ссылке. Анализ откроется только после подтверждения депозита postback-сообщением.",
-        "send_image": "Доступ открыт. Нажмите «Открыть анализ» и загрузите скриншот купона. Лимит — 3 анализа за сутки по UTC. Если кнопка приложения пока не настроена, отправьте изображение прямо сюда.",
+        "send_image": "Доступ открыт. Нажмите «Открыть анализ» и загрузите скриншот купона. Лимит — 3 анализа за сутки по UTC.",
         "no_link": "Ссылка ещё не настроена. Попробуйте позже или обратитесь в поддержку.",
         "no_promo": "Промокод: не задан",
         "limit": "Лимит на сегодня исчерпан: 3 анализа в сутки по UTC. Попробуйте после 00:00 UTC.",
@@ -133,7 +133,7 @@ TEXTS = {
         "choose_language": "Выберите язык / Choose language:",
         "need_registration": "To unlock analysis, first register at 1win using your personal link. Enter the promo code shown below if provided. Access is enabled after registration and the first deposit of any amount are confirmed.",
         "need_deposit": "The next step is your first deposit of any amount. Make it through the affiliate link. Analysis access opens only after the deposit postback is confirmed.",
-        "send_image": "Access is enabled. Tap “Open analysis” and upload a betting slip screenshot. Limit: 3 analyses per day (UTC). If the app button is not configured yet, send the image here.",
+        "send_image": "Access is enabled. Tap “Open analysis” and upload a betting slip screenshot. Limit: 3 analyses per day (UTC).",
         "no_link": "The link has not been configured yet. Please try later or contact support.",
         "no_promo": "Promo code: not set",
         "limit": "Today's limit is reached: 3 analyses per day (UTC). Try again after 00:00 UTC.",
@@ -422,5 +422,10 @@ def text_label(lang: str, key: str) -> str:
 
 def t(lang: str, key: str) -> str:
     language = lang if lang in TEXTS else "ru"
-    return CUSTOM_TEXTS.get(language, {}).get(key, TEXTS[language].get(key, TEXTS["ru"].get(key, key)))
+    value = CUSTOM_TEXTS.get(language, {}).get(key, TEXTS[language].get(key, TEXTS["ru"].get(key, key)))
+    if key == "send_image":
+        value = value.replace(" Если кнопка приложения пока не настроена, отправьте изображение прямо сюда.", "")
+        value = value.replace(" If the app button is not configured yet, send the image here.", "")
+        value = value.rstrip()
+    return value
 
