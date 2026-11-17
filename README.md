@@ -15,17 +15,17 @@ Users register with the affiliate link, and the first-deposit postback unlocks a
 - Set `DB_PATH=/app/data/bot.sqlite3` so SQLite lives in Bothost's persistent data directory.
 - Bothost supplies the Telegram `BOT_TOKEN` when the Telegram bot is configured.
 - Set `OPENAI_API_KEY` and the numeric `POSTBACK_CHANNEL_ID` in the environment settings.
-- Enable a public HTTPS domain for the app in Bothost, set its internal port to `3000`, and set `PORT=3000` in the environment. Set `WEBAPP_URL` to the exact public HTTPS address Bothost assigns (for example, `https://myapp.bothost.ru`). The application serves the Mini App and bot from the same process.
+- Enable a public HTTPS domain for the app in Bothost, set its internal port to `3000`, and set `PORT=3000` in the environment. The bot uses `WEBAPP_URL` when set, otherwise it builds the Mini App address from Bothost's `DOMAIN`. You can also set or override the address in `/admin` → **Affiliate and Mini App** → **Mini App address**.
 - To use the in-bot admin panel, run `/myid` in the bot, copy your numeric Telegram ID, set `ADMIN_IDS` to that value in Bothost, and restart/redeploy.
 - Add the main bot as an administrator to the private channel that receives affiliate postbacks.
 
 ## Admin panel inside Telegram
 
-Send `/admin` to open the inline panel. Choose **Texts and media**, then a language, category, and message. For each message, edit its text, attach or remove a photo, change its related button labels, or edit the registration promo code. New text, photo, link, and promo values appear in a preview and are applied only after Save; Cancel discards them. **User analytics** shows registrations, first deposits, manual access grants, active users, and analysis counts.
+Send `/admin` to open the inline panel. Choose **Message texts**, then a language and one of the six messages: main menu, instructions, registration prompt/error, or deposit prompt/error. Choose **Edit text**, review the preview, then Save or Cancel. **User analytics** shows registrations, first deposits, manual access grants, active users, and analysis counts.
 
 To grant analysis access manually, choose **Grant access**, enter the user's numeric Telegram ID (they can get it with `/myid`), review the ID, and press Save. A notification is sent if the user has already started the bot. Manual access is stored separately from registration and deposit postbacks, so it does not change affiliate conversion statistics. All confirmed access grants are saved in SQLite.
 
-Confirmed text, image file IDs, button labels, promo code, affiliate link, and analytics source data are stored in SQLite. On Bothost, set `DB_PATH=/app/data/bot.sqlite3`; Bothost preserves `/app/data` across rebuilds. Unconfirmed editor drafts are held in memory and are discarded if the bot restarts before Save.
+Confirmed message texts, Mini App address, promo code, affiliate link, access grants, and analytics source data are stored in SQLite. On Bothost, set `DB_PATH=/app/data/bot.sqlite3`; Bothost preserves `/app/data` across rebuilds. Unconfirmed editor drafts are held in memory and are discarded if the bot restarts before Save.
 
 The bot can accept the base affiliate link as shown in the 1win panel and automatically append a unique `sub1` for each user. If the URL template already contains `sub1={click_id}` (or `{sub1}`), it substitutes the unique ID there. Configure the postback message in the format `{sub1}|Firstdep|{amount}`; registration events may use `Registration` or `Reg`. Verify these labels and the returned `sub1` with test events before live use.
 
