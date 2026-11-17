@@ -56,6 +56,10 @@ MEDIA_SUPPORTED_KEYS = {
     "risk", "registered", "activated",
 }
 
+EDITABLE_MESSAGE_KEYS = (
+    "menu", "instruction", "need_registration", "registration_error", "need_deposit", "deposit_error",
+)
+
 
 def main_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -87,6 +91,7 @@ def settings_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=t(lang, "button_set_link"), callback_data="admin:input:link")],
         [InlineKeyboardButton(text=t(lang, "button_set_promo"), callback_data="admin:input:promo")],
+        [InlineKeyboardButton(text=t(lang, "button_set_webapp"), callback_data="admin:input:webapp_url")],
         [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="admin:home")],
     ])
 
@@ -124,6 +129,51 @@ def text_picker_keyboard(lang: str, text_lang: str, category: str) -> InlineKeyb
         ])
     rows.append([InlineKeyboardButton(text=t(lang, "button_back"), callback_data=f"admin:texts:{text_lang}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_message_picker_keyboard(lang: str, text_lang: str) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(
+        text=text_label(lang, key),
+        callback_data=f"admin:view:{text_lang}:{key}:messages",
+    )] for key in EDITABLE_MESSAGE_KEYS]
+    rows.append([InlineKeyboardButton(text=t(lang, "button_back"), callback_data="admin:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def simple_message_editor_keyboard(lang: str, text_lang: str, key: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=t(lang, "button_text_edit"),
+            callback_data=f"admin:edittext:{text_lang}:{key}:messages",
+        )],
+        [InlineKeyboardButton(
+            text=t(lang, "button_back"),
+            callback_data=f"admin:texts:{text_lang}",
+        )],
+    ])
+
+
+async def send_simple_message_editor(
+    bot: Bot,
+    user_id: int,
+    lang: str,
+    text_lang: str,
+    key: str,
+    notice: str | None = None,
+) -> None:
+    text = format_text(
+        lang,
+        "admin_text_preview",
+        label=text_label(lang, key),
+        current=t(text_lang, key)[:3200],
+    )
+    if notice:
+        text = f"{notice}\n\n{text}"
+    await bot.send_message(
+        user_id,
+        text,
+        reply_markup=simple_message_editor_keyboard(lang, text_lang, key),
+    )
 
 
 def button_picker_keyboard(lang: str, text_lang: str, parent_key: str, parent_category: str) -> InlineKeyboardMarkup:
@@ -317,15 +367,20 @@ async def send_user_content(
 
 
 async def send_home(bot: Bot, user_id: int, lang: str) -> None:
-    await send_user_content(bot, user_id, lang, "welcome", t(lang, "welcome"))
     await send_user_content(bot, user_id, lang, "menu", t(lang, "menu"), reply_markup=main_keyboard(lang))
 
 
-async def referral_button(user_id: int, lang: str):
+async def miniapp_url() -> str:
+    return (await db.get_setting("webapp_url")) or settings.webapp_url
+
+
+async def referral_url(user_id: int) -> str | None:
     base = await db.get_setting("referral_url")
     if not base:
         return None
-    click_id = await db.create_referral(user_id)
+    click_id = await db.get_latest_referral_click_id(user_id)
+    if not click_id:
+        click_id = await db.create_referral(user_id)
     encoded = quote(click_id, safe="")
     if "{click_id}" in base:
         url = base.replace("{click_id}", encoded)
@@ -334,8 +389,27 @@ async def referral_button(user_id: int, lang: str):
     else:
         separator = "&" if "?" in base else "?"
         url = f"{base}{separator}sub1={encoded}"
+    return url
+
+
+async def referral_button(user_id: int, lang: str):
+    url = await referral_url(user_id)
+    if not url:
+        return None
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=t(lang, "button_register"), url=url)],
+        [InlineKeyboardButton(text=t(lang, "button_check_registration"), callback_data="gate:registration")],
+        [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="menu:home")],
+    ])
+
+
+async def deposit_button(user_id: int, lang: str):
+    url = await referral_url(user_id)
+    if not url:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t(lang, "button_make_deposit"), url=url)],
+        [InlineKeyboardButton(text=t(lang, "button_check_deposit"), callback_data="gate:deposit")],
         [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="menu:home")],
     ])
 
@@ -344,24 +418,31 @@ async def show_signal_gate(bot: Bot, user_id: int, lang: str) -> None:
     user = await db.get_user(user_id)
     if user and (user["deposited"] or user["access_granted"]):
         markup = main_keyboard(lang)
-        if settings.webapp_url:
+        url = await miniapp_url()
+        if url:
             markup = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=t(lang, "button_open_app"), web_app=WebAppInfo(url=settings.webapp_url))],
+                [InlineKeyboardButton(text=t(lang, "button_open_app"), web_app=WebAppInfo(url=url))],
                 [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="menu:home")],
             ])
         await send_user_content(bot, user_id, lang, "send_image", t(lang, "send_image"), reply_markup=markup)
         return
     if user and user["registered"]:
-        await send_user_content(bot, user_id, lang, "need_deposit", t(lang, "need_deposit"), reply_markup=main_keyboard(lang))
+        markup = await deposit_button(user_id, lang)
+        if not markup:
+            await send_user_content(bot, user_id, lang, "no_link", t(lang, "no_link"), reply_markup=main_keyboard(lang))
+            return
+        await send_user_content(bot, user_id, lang, "need_deposit", t(lang, "need_deposit"), reply_markup=markup)
         return
     markup = await referral_button(user_id, lang)
     if not markup:
         await send_user_content(bot, user_id, lang, "no_link", t(lang, "no_link"), reply_markup=main_keyboard(lang))
         return
     promo = (await db.get_setting("promo")) or ""
-    promo_line = f"\n\n{t(lang, 'promo_prefix')}{promo}" if promo else ""
+    registration_text = t(lang, "need_registration")
+    if promo:
+        registration_text += f"\n\n{t(lang, 'promo_prefix')}{promo}"
     await send_user_content(
-        bot, user_id, lang, "need_registration", t(lang, "need_registration") + promo_line, reply_markup=markup
+        bot, user_id, lang, "need_registration", registration_text, reply_markup=markup
     )
 
 
@@ -379,6 +460,7 @@ async def begin_admin_input(
     prompt_key = {
         "link": "admin_edit_link_prompt",
         "promo": "admin_edit_promo_prompt",
+        "webapp_url": "admin_edit_webapp_prompt",
         "media": "admin_photo_prompt",
         "grant_access": "admin_grant_access_prompt",
     }.get(kind, "admin_text_edit_prompt")
@@ -409,11 +491,17 @@ async def send_admin_return(
     if pending.get("kind") == "promo":
         promo = (await db.get_setting("promo")) or "—"
         notice += "\n" + format_text(lang, "admin_current_promo", value=promo)
+    if pending.get("kind") == "webapp_url":
+        current_url = await miniapp_url() or "—"
+        notice += "\n" + format_text(lang, "admin_current_webapp", value=current_url)
     if pending.get("kind") == "text" and pending.get("key") in BUTTON_KEYS:
         label = t(pending.get("target_lang", lang), pending["key"])
         notice += "\n" + format_text(lang, "admin_button_saved", value=label)
     if pending.get("kind") == "grant_access":
         await bot.send_message(user_id, notice, reply_markup=admin_keyboard(lang))
+        return
+    if pending.get("kind") == "text" and category == "messages" and target_lang in ("ru", "en") and key in EDITABLE_MESSAGE_KEYS:
+        await send_simple_message_editor(bot, user_id, lang, target_lang, key, notice=notice)
         return
     if target_lang in ("ru", "en") and key in text_keys() and category:
         await send_text_editor_view(bot, user_id, lang, target_lang, key, category, notice=notice)
@@ -433,8 +521,11 @@ async def handle_admin_text_input(message: Message, bot: Bot, pending: dict[str,
         return
 
     value = message.text.strip()
-    if kind in ("link",) and not value.startswith(("https://", "http://")):
+    if kind == "link" and not value.startswith(("https://", "http://")):
         await message.answer(t(lang, "admin_invalid_link"), reply_markup=cancel_keyboard(lang))
+        return
+    if kind == "webapp_url" and value != "-" and (not value.startswith("https://") or any(ch.isspace() for ch in value)):
+        await message.answer(t(lang, "admin_invalid_webapp"), reply_markup=cancel_keyboard(lang))
         return
     target_id = None
     if kind == "grant_access":
@@ -445,7 +536,7 @@ async def handle_admin_text_input(message: Message, bot: Bot, pending: dict[str,
     if kind == "text" and not value:
         await message.answer(t(lang, "admin_expected_text"), reply_markup=cancel_keyboard(lang))
         return
-    max_length = 2048 if kind == "link" else (3500 if kind == "text" else 100)
+    max_length = 2048 if kind in ("link", "webapp_url") else (3500 if kind == "text" else 100)
     if len(value) > max_length:
         await message.answer(t(lang, "admin_expected_text"), reply_markup=cancel_keyboard(lang))
         return
@@ -456,7 +547,7 @@ async def handle_admin_text_input(message: Message, bot: Bot, pending: dict[str,
     except Exception:
         pass
     pending["mode"] = "confirm"
-    pending["draft"] = "" if kind == "promo" and value == "-" else value
+    pending["draft"] = "" if kind in ("promo", "webapp_url") and value == "-" else value
     if kind == "text":
         target_lang = pending["target_lang"]
         key = pending["key"]
@@ -466,6 +557,12 @@ async def handle_admin_text_input(message: Message, bot: Bot, pending: dict[str,
         preview = format_text(lang, "admin_draft_grant_access", user_id=target_id)
     elif kind == "promo":
         preview = format_text(lang, "admin_draft_promo", draft=pending["draft"] or "—")
+    elif kind == "webapp_url":
+        preview = format_text(
+            lang,
+            "admin_draft_webapp",
+            draft=pending["draft"] or t(lang, "admin_webapp_env_fallback"),
+        )
     else:
         preview = format_text(lang, "admin_draft_link", draft=value[:2000])
     await bot.send_message(user_id, preview, reply_markup=draft_keyboard(lang))
@@ -511,6 +608,8 @@ async def commit_admin_draft(bot: Bot, user_id: int, lang: str) -> bool:
         await db.set_setting("promo", pending["draft"])
     elif kind == "link":
         await db.set_setting("referral_url", pending["draft"])
+    elif kind == "webapp_url":
+        await db.set_setting("webapp_url", pending["draft"])
     elif kind == "grant_access":
         target_id = int(pending["draft"])
         newly_granted = await db.grant_manual_access(target_id, user_id)
@@ -558,6 +657,7 @@ async def start(message: Message, bot: Bot) -> None:
     if not message.from_user:
         return
     await db.ensure_user(message.from_user.id)
+    await safe_delete(message)
     await send_home(bot, message.from_user.id, await user_language(message.from_user.id))
 
 
@@ -598,6 +698,39 @@ async def menu_callback(callback: CallbackQuery, bot: Bot) -> None:
         await send_user_content(bot, user_id, lang, "choose_language", t(lang, "choose_language"), language_keyboard(lang))
     elif action == "signal":
         await show_signal_gate(bot, user_id, lang)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("gate:"))
+async def gate_callback(callback: CallbackQuery, bot: Bot) -> None:
+    if not callback.from_user or not callback.data:
+        await callback.answer()
+        return
+    user_id = callback.from_user.id
+    await db.ensure_user(user_id)
+    lang = await user_language(user_id)
+    action = callback.data.partition(":")[2]
+    await safe_delete(callback.message)
+    user = await db.get_user(user_id)
+
+    if user and (user["deposited"] or user["access_granted"]):
+        await show_signal_gate(bot, user_id, lang)
+    elif action == "registration" and user and user["registered"]:
+        await show_signal_gate(bot, user_id, lang)
+    elif action == "deposit" and user and user["registered"]:
+        markup = await deposit_button(user_id, lang)
+        if markup:
+            await send_user_content(bot, user_id, lang, "deposit_error", t(lang, "deposit_error"), reply_markup=markup)
+        else:
+            await send_user_content(bot, user_id, lang, "no_link", t(lang, "no_link"), reply_markup=main_keyboard(lang))
+    else:
+        markup = await referral_button(user_id, lang)
+        if markup:
+            await send_user_content(
+                bot, user_id, lang, "registration_error", t(lang, "registration_error"), reply_markup=markup
+            )
+        else:
+            await send_user_content(bot, user_id, lang, "no_link", t(lang, "no_link"), reply_markup=main_keyboard(lang))
     await callback.answer()
 
 
@@ -650,65 +783,16 @@ async def admin_callback(callback: CallbackQuery, bot: Bot) -> None:
     elif action == "settings":
         await bot.send_message(user_id, t(lang, "admin_choose_setting"), reply_markup=settings_keyboard(lang))
     elif action == "texts" and len(parts) == 3 and parts[2] in ("ru", "en"):
-        await bot.send_message(user_id, t(lang, "admin_choose_category"), reply_markup=text_category_keyboard(lang, parts[2]))
-    elif action == "category" and len(parts) == 4 and parts[2] in ("ru", "en"):
-        valid_categories = {category for category, _ in text_categories(lang)}
-        if parts[3] in valid_categories:
-            await bot.send_message(user_id, t(lang, "admin_choose_text"), reply_markup=text_picker_keyboard(lang, parts[2], parts[3]))
-    elif action == "view" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in text_keys():
-        category = parts[4]
-        if parts[3] in category_text_keys(category):
-            await send_text_editor_view(bot, user_id, lang, parts[2], parts[3], category)
-    elif action == "buttons" and len(parts) == 5 and parts[2] in ("ru", "en"):
-        text_lang, parent_key, category = parts[2], parts[3], parts[4]
-        if parent_key in MESSAGE_BUTTONS and parent_key in category_text_keys(category):
-            await bot.send_message(
-                user_id,
-                format_text(lang, "admin_button_picker", label=text_label(lang, parent_key)),
-                reply_markup=button_picker_keyboard(lang, text_lang, parent_key, category),
-            )
-    elif action == "button" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in BUTTON_KEYS:
-        text_lang, key, parent_key = parts[2], parts[3], parts[4]
-        category = category_for_key(parent_key)
-        if key in MESSAGE_BUTTONS.get(parent_key, []) and parent_key in category_text_keys(category):
-            await bot.send_message(
-                user_id,
-                format_text(lang, "admin_button_preview", label=text_label(lang, key), current=t(text_lang, key)),
-                reply_markup=button_preview_keyboard(lang, text_lang, key, parent_key, category),
-            )
-    elif action in ("edittext", "edit") and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in text_keys():
-        text_lang, key, category = parts[2], parts[3], parts[4]
-        if key in category_text_keys(category):
-            await begin_admin_input(bot, user_id, lang, "text", text_lang, key, category)
-    elif action == "editbutton" and len(parts) in (4, 5) and parts[2] in ("ru", "en") and parts[3] in BUTTON_KEYS:
-        text_lang, key = parts[2], parts[3]
-        parent_key = parts[4] if len(parts) == 5 else key
-        parent_category = category_for_key(parent_key)
-        if key in text_keys():
-            await begin_admin_input(bot, user_id, lang, "text", text_lang, key, "buttons", parent_key, parent_category)
-    elif action == "editimage" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in MEDIA_SUPPORTED_KEYS:
-        text_lang, key, category = parts[2], parts[3], parts[4]
-        if key in category_text_keys(category):
-            await begin_admin_input(bot, user_id, lang, "media", text_lang, key, category)
-    elif action == "removeimage" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in MEDIA_SUPPORTED_KEYS:
-        text_lang, key, category = parts[2], parts[3], parts[4]
-        if key in category_text_keys(category):
-            if not await db.get_text_media(text_lang, key):
-                await send_text_editor_view(bot, user_id, lang, text_lang, key, category)
-            else:
-                pending_admin_inputs[user_id] = {
-                    "kind": "media", "mode": "confirm", "draft": None,
-                    "target_lang": text_lang, "key": key, "category": category,
-                    "return_key": key, "return_category": category, "language": lang,
-                }
-                await bot.send_message(
-                    user_id,
-                    format_text(lang, "admin_draft_remove_image", label=text_label(lang, key)),
-                    reply_markup=draft_keyboard(lang),
-                )
-    elif action == "messagepromo" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] == "need_registration":
-        await begin_admin_input(bot, user_id, lang, "promo", parts[2], parts[3], parts[4])
-    elif action == "input" and len(parts) == 3 and parts[2] in ("link", "promo"):
+        await bot.send_message(
+            user_id,
+            t(lang, "admin_choose_text"),
+            reply_markup=admin_message_picker_keyboard(lang, parts[2]),
+        )
+    elif action == "view" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in EDITABLE_MESSAGE_KEYS and parts[4] == "messages":
+        await send_simple_message_editor(bot, user_id, lang, parts[2], parts[3])
+    elif action == "edittext" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in EDITABLE_MESSAGE_KEYS and parts[4] == "messages":
+        await begin_admin_input(bot, user_id, lang, "text", parts[2], parts[3], "messages")
+    elif action == "input" and len(parts) == 3 and parts[2] in ("link", "promo", "webapp_url"):
         await begin_admin_input(bot, user_id, lang, parts[2])
     elif action == "save":
         saved = await commit_admin_draft(bot, user_id, lang)
@@ -717,16 +801,6 @@ async def admin_callback(callback: CallbackQuery, bot: Bot) -> None:
             return
     elif action == "cancel":
         await cancel_admin_draft(bot, user_id, lang)
-    elif action == "resetconfirm" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in text_keys():
-        await bot.send_message(
-            user_id,
-            t(lang, "admin_text_reset_confirm"),
-            reply_markup=reset_confirm_keyboard(lang, parts[2], parts[3], parts[4]),
-        )
-    elif action == "reset" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in text_keys():
-        text_lang, key, category = parts[2], parts[3], parts[4]
-        await db.clear_text(text_lang, key)
-        await send_text_editor_view(bot, user_id, lang, text_lang, key, category, notice=t(lang, "admin_text_reset_done"))
     await callback.answer()
 
 
@@ -766,8 +840,6 @@ async def process_image(message: Message, bot: Bot, file_id: str) -> None:
         user = await db.get_user(user_id)
         if user and (user["deposited"] or user["access_granted"]):
             await send_user_content(bot, user_id, lang, "limit", t(lang, "limit"), main_keyboard(lang))
-        elif user and user["registered"]:
-            await send_user_content(bot, user_id, lang, "need_deposit", t(lang, "need_deposit"), main_keyboard(lang))
         else:
             await show_signal_gate(bot, user_id, lang)
         return
@@ -829,9 +901,7 @@ async def postback_channel_post(message: Message, bot: Bot) -> None:
         return
     user = await db.get_user(user_id)
     lang = user["language"] if user else "ru"
-    is_deposit = any(term in event.lower() for term in ("firstdep", "deposit", "dep"))
-    key = "activated" if is_deposit else "registered"
-    await send_user_content(bot, user_id, lang, key, t(lang, key), main_keyboard(lang))
+    await show_signal_gate(bot, user_id, lang)
 
 
 @router.message(F.text)
