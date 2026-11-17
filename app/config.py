@@ -16,6 +16,8 @@ class Settings:
     admin_ids: set[int]
     bot_name: str
     daily_analysis_limit: int
+    webapp_url: str
+    port: int
 
 
 def get_settings() -> Settings:
@@ -29,6 +31,8 @@ def get_settings() -> Settings:
         admin_ids={int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()},
         bot_name=os.getenv("BOT_NAME", "AI анализ купонов").strip(),
         daily_analysis_limit=max(1, int(os.getenv("DAILY_ANALYSIS_LIMIT", "3"))),
+        webapp_url=os.getenv("WEBAPP_URL", "").strip().rstrip("/"),
+        port=max(1, int(os.getenv("PORT", "3000"))),
     )
 
 
@@ -45,4 +49,6 @@ def validate_settings() -> None:
     ]
     if missing:
         raise RuntimeError("Заполните обязательные переменные: " + ", ".join(missing))
+    if settings.webapp_url and not settings.webapp_url.startswith("https://"):
+        raise RuntimeError("WEBAPP_URL должен начинаться с https://")
 
