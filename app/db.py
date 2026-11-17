@@ -30,6 +30,9 @@ class Database:
                 access_granted INTEGER NOT NULL DEFAULT 0,
                 access_granted_at TEXT,
                 access_granted_by INTEGER,
+                registration_stage_granted INTEGER NOT NULL DEFAULT 0,
+                registration_stage_granted_at TEXT,
+                registration_stage_granted_by INTEGER,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS referrals (
@@ -72,6 +75,12 @@ class Database:
             await self.conn.execute("ALTER TABLE users ADD COLUMN access_granted_at TEXT")
         if "access_granted_by" not in user_columns:
             await self.conn.execute("ALTER TABLE users ADD COLUMN access_granted_by INTEGER")
+        if "registration_stage_granted" not in user_columns:
+            await self.conn.execute("ALTER TABLE users ADD COLUMN registration_stage_granted INTEGER NOT NULL DEFAULT 0")
+        if "registration_stage_granted_at" not in user_columns:
+            await self.conn.execute("ALTER TABLE users ADD COLUMN registration_stage_granted_at TEXT")
+        if "registration_stage_granted_by" not in user_columns:
+            await self.conn.execute("ALTER TABLE users ADD COLUMN registration_stage_granted_by INTEGER")
         await self.conn.commit()
         cur = await self.conn.execute("SELECT language,key,value FROM texts")
         rows = await cur.fetchall()
@@ -122,6 +131,30 @@ class Database:
                 """, (now, admin_id, telegram_id))
                 await conn.commit()
                 return not bool(row["access_granted"])
+            except Exception:
+                await conn.rollback()
+                raise
+
+    async def grant_registration_stage(self, telegram_id: int, admin_id: int) -> bool:
+        await self.ensure_user(telegram_id)
+        now = datetime.now(timezone.utc).isoformat()
+        async with self.lock:
+            conn = self._connection()
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                cur = await conn.execute(
+                    "SELECT registration_stage_granted FROM users WHERE telegram_id=?", (telegram_id,)
+                )
+                row = await cur.fetchone()
+                await conn.execute("""
+                    UPDATE users
+                    SET registration_stage_granted=1,
+                        registration_stage_granted_at=COALESCE(registration_stage_granted_at, ?),
+                        registration_stage_granted_by=COALESCE(registration_stage_granted_by, ?)
+                    WHERE telegram_id=?
+                """, (now, admin_id, telegram_id))
+                await conn.commit()
+                return not bool(row["registration_stage_granted"])
             except Exception:
                 await conn.rollback()
                 raise
@@ -295,6 +328,7 @@ class Database:
                     (SELECT COUNT(*) FROM users WHERE registered=1) AS registered_users,
                     (SELECT COUNT(*) FROM users WHERE deposited=1) AS deposited_users,
                     (SELECT COUNT(*) FROM users WHERE access_granted=1) AS manual_access_users,
+                    (SELECT COUNT(*) FROM users WHERE registration_stage_granted=1) AS manual_registration_stage_users,
                     (SELECT COUNT(*) FROM users WHERE date(created_at)=date('now')) AS new_users_today,
                     (SELECT COUNT(*) FROM users WHERE date(registered_at)=date('now')) AS registrations_today,
                     (SELECT COUNT(*) FROM users WHERE date(deposited_at)=date('now')) AS deposits_today,
