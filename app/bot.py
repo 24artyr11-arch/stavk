@@ -28,6 +28,7 @@ BUTTON_KEYS = {
     "button_instruction", "button_language", "button_signal", "button_open_app",
     "button_register", "language_russian", "language_english", "button_back",
     "button_cancel", "button_admin", "button_admin_content", "button_admin_analytics",
+    "button_admin_grant_access",
     "button_admin_settings", "button_edit_ru", "button_edit_en", "button_set_link",
     "button_set_promo", "button_text_edit", "button_edit_button_label", "button_edit_image",
     "button_remove_image", "button_edit_buttons", "button_edit_promo", "button_save",
@@ -76,6 +77,7 @@ def admin_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=t(lang, "button_admin_content"), callback_data="admin:content")],
         [InlineKeyboardButton(text=t(lang, "button_admin_analytics"), callback_data="admin:analytics")],
+        [InlineKeyboardButton(text=t(lang, "button_admin_grant_access"), callback_data="admin:grantaccess")],
         [InlineKeyboardButton(text=t(lang, "button_admin_settings"), callback_data="admin:settings")],
         [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="menu:home")],
     ])
@@ -340,7 +342,7 @@ async def referral_button(user_id: int, lang: str):
 
 async def show_signal_gate(bot: Bot, user_id: int, lang: str) -> None:
     user = await db.get_user(user_id)
-    if user and user["deposited"]:
+    if user and (user["deposited"] or user["access_granted"]):
         markup = main_keyboard(lang)
         if settings.webapp_url:
             markup = InlineKeyboardMarkup(inline_keyboard=[
@@ -378,6 +380,7 @@ async def begin_admin_input(
         "link": "admin_edit_link_prompt",
         "promo": "admin_edit_promo_prompt",
         "media": "admin_photo_prompt",
+        "grant_access": "admin_grant_access_prompt",
     }.get(kind, "admin_text_edit_prompt")
     prompt = await bot.send_message(user_id, t(lang, prompt_key), reply_markup=cancel_keyboard(lang))
     pending_admin_inputs[user_id] = {
@@ -409,6 +412,9 @@ async def send_admin_return(
     if pending.get("kind") == "text" and pending.get("key") in BUTTON_KEYS:
         label = t(pending.get("target_lang", lang), pending["key"])
         notice += "\n" + format_text(lang, "admin_button_saved", value=label)
+    if pending.get("kind") == "grant_access":
+        await bot.send_message(user_id, notice, reply_markup=admin_keyboard(lang))
+        return
     if target_lang in ("ru", "en") and key in text_keys() and category:
         await send_text_editor_view(bot, user_id, lang, target_lang, key, category, notice=notice)
     else:
@@ -430,6 +436,12 @@ async def handle_admin_text_input(message: Message, bot: Bot, pending: dict[str,
     if kind in ("link",) and not value.startswith(("https://", "http://")):
         await message.answer(t(lang, "admin_invalid_link"), reply_markup=cancel_keyboard(lang))
         return
+    target_id = None
+    if kind == "grant_access":
+        if not value.isdecimal() or int(value) <= 0 or int(value) > (1 << 52) - 1:
+            await message.answer(t(lang, "admin_invalid_telegram_id"), reply_markup=cancel_keyboard(lang))
+            return
+        target_id = int(value)
     if kind == "text" and not value:
         await message.answer(t(lang, "admin_expected_text"), reply_markup=cancel_keyboard(lang))
         return
@@ -449,6 +461,9 @@ async def handle_admin_text_input(message: Message, bot: Bot, pending: dict[str,
         target_lang = pending["target_lang"]
         key = pending["key"]
         preview = format_text(lang, "admin_draft_text", label=text_label(lang, key), draft=value[:3300])
+    elif kind == "grant_access":
+        pending["draft"] = str(target_id)
+        preview = format_text(lang, "admin_draft_grant_access", user_id=target_id)
     elif kind == "promo":
         preview = format_text(lang, "admin_draft_promo", draft=pending["draft"] or "—")
     else:
@@ -496,6 +511,28 @@ async def commit_admin_draft(bot: Bot, user_id: int, lang: str) -> bool:
         await db.set_setting("promo", pending["draft"])
     elif kind == "link":
         await db.set_setting("referral_url", pending["draft"])
+    elif kind == "grant_access":
+        target_id = int(pending["draft"])
+        newly_granted = await db.grant_manual_access(target_id, user_id)
+        target = await db.get_user(target_id)
+        target_lang = target["language"] if target and target["language"] in ("ru", "en") else "ru"
+        try:
+            await bot.send_message(target_id, t(target_lang, "manual_access_granted"), reply_markup=main_keyboard(target_lang))
+            delivery_status = t(lang, "admin_notification_sent")
+        except Exception:
+            log.info("Could not notify Telegram user %s about manually granted access", target_id, exc_info=True)
+            delivery_status = t(lang, "admin_notification_not_sent")
+        access_status = t(lang, "admin_access_new" if newly_granted else "admin_access_existing")
+        notice = format_text(
+            lang,
+            "admin_access_granted_admin",
+            user_id=target_id,
+            access_status=access_status,
+            delivery_status=delivery_status,
+        )
+        pending_admin_inputs.pop(user_id, None)
+        await send_admin_return(bot, user_id, lang, pending, notice)
+        return True
     else:
         return False
     pending_admin_inputs.pop(user_id, None)
@@ -608,6 +645,8 @@ async def admin_callback(callback: CallbackQuery, bot: Bot) -> None:
             [InlineKeyboardButton(text=t(lang, "button_admin_analytics"), callback_data="admin:analytics")],
             [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="admin:home")],
         ]))
+    elif action == "grantaccess":
+        await begin_admin_input(bot, user_id, lang, "grant_access")
     elif action == "settings":
         await bot.send_message(user_id, t(lang, "admin_choose_setting"), reply_markup=settings_keyboard(lang))
     elif action == "texts" and len(parts) == 3 and parts[2] in ("ru", "en"):
@@ -725,7 +764,7 @@ async def process_image(message: Message, bot: Bot, file_id: str) -> None:
     allowed, _, analysis_id = await db.reserve_analysis(user_id, settings.daily_analysis_limit)
     if not allowed:
         user = await db.get_user(user_id)
-        if user and user["deposited"]:
+        if user and (user["deposited"] or user["access_granted"]):
             await send_user_content(bot, user_id, lang, "limit", t(lang, "limit"), main_keyboard(lang))
         elif user and user["registered"]:
             await send_user_content(bot, user_id, lang, "need_deposit", t(lang, "need_deposit"), main_keyboard(lang))
