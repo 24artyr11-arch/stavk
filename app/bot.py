@@ -10,6 +10,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
+    ReplyKeyboardRemove,
     WebAppInfo,
 )
 
@@ -698,6 +699,16 @@ async def start(message: Message, bot: Bot) -> None:
         return
     await db.ensure_user(message.from_user.id)
     await safe_delete(message)
+    try:
+        # Clear any persistent reply keyboard left by an older bot version.
+        keyboard_reset = await bot.send_message(
+            message.from_user.id,
+            "\u2063",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        await safe_delete(keyboard_reset)
+    except Exception:
+        log.debug("Could not clear a legacy reply keyboard", exc_info=True)
     await send_home(bot, message.from_user.id, await user_language(message.from_user.id))
 
 
