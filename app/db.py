@@ -25,6 +25,8 @@ class Database:
                 language TEXT NOT NULL DEFAULT 'ru',
                 registered INTEGER NOT NULL DEFAULT 0,
                 deposited INTEGER NOT NULL DEFAULT 0,
+                registered_at TEXT,
+                deposited_at TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS referrals (
@@ -48,7 +50,19 @@ class Database:
                 value TEXT NOT NULL,
                 PRIMARY KEY(language, key)
             );
+            CREATE TABLE IF NOT EXISTS text_media (
+                language TEXT NOT NULL,
+                key TEXT NOT NULL,
+                file_id TEXT NOT NULL,
+                PRIMARY KEY(language, key)
+            );
         """)
+        cur = await self.conn.execute("PRAGMA table_info(users)")
+        user_columns = {row["name"] for row in await cur.fetchall()}
+        if "registered_at" not in user_columns:
+            await self.conn.execute("ALTER TABLE users ADD COLUMN registered_at TEXT")
+        if "deposited_at" not in user_columns:
+            await self.conn.execute("ALTER TABLE users ADD COLUMN deposited_at TEXT")
         await self.conn.commit()
         cur = await self.conn.execute("SELECT language,key,value FROM texts")
         rows = await cur.fetchall()
@@ -127,6 +141,29 @@ class Database:
             await self._connection().commit()
         clear_custom_text(language, key)
 
+    async def get_text_media(self, language: str, key: str) -> str | None:
+        async with self.lock:
+            cur = await self._connection().execute(
+                "SELECT file_id FROM text_media WHERE language=? AND key=?", (language, key)
+            )
+            row = await cur.fetchone()
+            return row["file_id"] if row else None
+
+    async def set_text_media(self, language: str, key: str, file_id: str) -> None:
+        async with self.lock:
+            await self._connection().execute("""
+                INSERT INTO text_media(language,key,file_id) VALUES(?,?,?)
+                ON CONFLICT(language,key) DO UPDATE SET file_id=excluded.file_id
+            """, (language, key, file_id))
+            await self._connection().commit()
+
+    async def clear_text_media(self, language: str, key: str) -> None:
+        async with self.lock:
+            await self._connection().execute(
+                "DELETE FROM text_media WHERE language=? AND key=?", (language, key)
+            )
+            await self._connection().commit()
+
     async def activate_event(self, click_id: str, event: str) -> tuple[int, bool] | None:
         event_l = event.strip().lower()
         is_deposit = any(x in event_l for x in ("firstdep", "first_deposit", "first deposit", "deposit", "dep"))
@@ -147,11 +184,23 @@ class Database:
                     await conn.rollback()
                     return None
                 telegram_id = int(row["telegram_id"])
+                now = datetime.now(timezone.utc).isoformat()
                 if is_deposit:
-                    await conn.execute("UPDATE users SET registered=1,deposited=1 WHERE telegram_id=?", (telegram_id,))
+                    await conn.execute("""
+                        UPDATE users
+                        SET registered=1,
+                            registered_at=COALESCE(registered_at, CASE WHEN registered=0 THEN ? END),
+                            deposited=1,
+                            deposited_at=COALESCE(deposited_at, CASE WHEN deposited=0 THEN ? END)
+                        WHERE telegram_id=?
+                    """, (now, now, telegram_id))
                     changed = not bool(row["deposited"])
                 else:
-                    await conn.execute("UPDATE users SET registered=1 WHERE telegram_id=?", (telegram_id,))
+                    await conn.execute("""
+                        UPDATE users SET registered=1,
+                            registered_at=COALESCE(registered_at, CASE WHEN registered=0 THEN ? END)
+                        WHERE telegram_id=?
+                    """, (now, telegram_id))
                     changed = not bool(row["registered"])
                 await conn.commit()
                 return telegram_id, changed
@@ -195,6 +244,26 @@ class Database:
                 (telegram_id,),
             )
             return int((await cur.fetchone())["n"])
+
+    async def get_user_analytics(self) -> dict[str, int]:
+        async with self.lock:
+            cur = await self._connection().execute("""
+                SELECT
+                    (SELECT COUNT(*) FROM users) AS total_users,
+                    (SELECT COUNT(*) FROM users WHERE registered=1) AS registered_users,
+                    (SELECT COUNT(*) FROM users WHERE deposited=1) AS deposited_users,
+                    (SELECT COUNT(*) FROM users WHERE date(created_at)=date('now')) AS new_users_today,
+                    (SELECT COUNT(*) FROM users WHERE date(registered_at)=date('now')) AS registrations_today,
+                    (SELECT COUNT(*) FROM users WHERE date(deposited_at)=date('now')) AS deposits_today,
+                    (SELECT COUNT(DISTINCT telegram_id) FROM analyses
+                        WHERE datetime(created_at)>=datetime('now','-7 days')) AS active_users_7d,
+                    (SELECT COUNT(DISTINCT telegram_id) FROM analyses
+                        WHERE date(created_at)=date('now')) AS active_users_today,
+                    (SELECT COUNT(*) FROM analyses) AS analyses_total,
+                    (SELECT COUNT(*) FROM analyses WHERE date(created_at)=date('now')) AS analyses_today
+            """)
+            row = await cur.fetchone()
+            return {key: int(row[key]) for key in row.keys()}
 
     async def rollback_analysis(self, analysis_id: int) -> None:
         async with self.lock:
