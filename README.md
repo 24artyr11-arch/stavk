@@ -1,6 +1,6 @@
-# Telegram bot for betting slip analysis
+# Telegram bot and Mini App for betting slip analysis
 
-Telegram bot only for the first version (no Mini App). Users register with the affiliate link, a first-deposit postback unlocks access, then users send a betting slip screenshot to the bot. GPT analyzes the visible details. The daily limit is 3 successful analyses per UTC day.
+Users register with the affiliate link, and the first-deposit postback unlocks access. They can then open the Telegram Mini App, select a sport, and upload a betting slip screenshot for GPT analysis. The daily limit is 3 successful analyses per UTC day. The existing bot screenshot flow remains available.
 
 ## Local setup
 
@@ -15,6 +15,7 @@ Telegram bot only for the first version (no Mini App). Users register with the a
 - Set `DB_PATH=/app/data/bot.sqlite3` so SQLite lives in Bothost's persistent data directory.
 - Bothost supplies the Telegram `BOT_TOKEN` when the Telegram bot is configured.
 - Set `OPENAI_API_KEY` and the numeric `POSTBACK_CHANNEL_ID` in the environment settings.
+- Enable a public HTTPS domain for the app in Bothost, set its internal port to `3000`, and set `PORT=3000` in the environment. Set `WEBAPP_URL` to the exact public HTTPS address Bothost assigns (for example, `https://myapp.bothost.ru`). The application serves the Mini App and bot from the same process.
 - To use the in-bot admin panel, run `/myid` in the bot, copy your numeric Telegram ID, set `ADMIN_IDS` to that value in Bothost, and restart/redeploy.
 - Add the main bot as an administrator to the private channel that receives affiliate postbacks.
 
@@ -27,6 +28,7 @@ The bot can accept the base affiliate link as shown in the 1win panel and automa
 ## Notes
 
 - GPT analysis uses only the screenshot; this version does not retrieve live odds, lineups, injuries, or sports statistics.
-- Images are sent to the OpenAI API for analysis and are not stored in this app.
+- The Mini App validates Telegram `initData` on the server before checking access or accepting an image. It shares the same SQLite activation status and UTC daily limit as the bot.
+- Images are sent to the OpenAI API for analysis and are not retained by this app. The selected sport is sent as context; the model can still report that the screenshot does not match the selection.
 - `.env` and API credentials must never be committed to GitHub.
 
