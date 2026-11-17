@@ -22,6 +22,14 @@ class Settings:
 
 def get_settings() -> Settings:
     channel_id = os.getenv("POSTBACK_CHANNEL_ID", "").strip()
+    webapp_url = os.getenv("WEBAPP_URL", "").strip().rstrip("/")
+    if not webapp_url:
+        domain = os.getenv("DOMAIN", "").strip().rstrip("/")
+        if domain:
+            if domain.startswith("http://"):
+                webapp_url = "https://" + domain.removeprefix("http://")
+            else:
+                webapp_url = domain if domain.startswith("https://") else f"https://{domain}"
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", "").strip(),
         openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
@@ -31,7 +39,7 @@ def get_settings() -> Settings:
         admin_ids={int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()},
         bot_name=os.getenv("BOT_NAME", "AI анализ купонов").strip(),
         daily_analysis_limit=max(1, int(os.getenv("DAILY_ANALYSIS_LIMIT", "3"))),
-        webapp_url=os.getenv("WEBAPP_URL", "").strip().rstrip("/"),
+        webapp_url=webapp_url,
         port=max(1, int(os.getenv("PORT", "3000"))),
     )
 
