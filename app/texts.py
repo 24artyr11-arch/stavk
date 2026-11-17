@@ -424,8 +424,8 @@ def t(lang: str, key: str) -> str:
     language = lang if lang in TEXTS else "ru"
     value = CUSTOM_TEXTS.get(language, {}).get(key, TEXTS[language].get(key, TEXTS["ru"].get(key, key)))
     if key == "send_image":
-        value = value.replace(" Если кнопка приложения пока не настроена, отправьте изображение прямо сюда.", "")
-        value = value.replace(" If the app button is not configured yet, send the image here.", "")
+        value = value.replace("Если кнопка приложения пока не настроена, отправьте изображение прямо сюда.", "")
+        value = value.replace("If the app button is not configured yet, send the image here.", "")
         value = value.rstrip()
     return value
 
