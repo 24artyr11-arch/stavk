@@ -136,6 +136,15 @@ class Database:
             await self._connection().commit()
         return click_id
 
+    async def get_latest_referral_click_id(self, telegram_id: int) -> str | None:
+        async with self.lock:
+            cur = await self._connection().execute(
+                "SELECT click_id FROM referrals WHERE telegram_id=? ORDER BY rowid DESC LIMIT 1",
+                (telegram_id,),
+            )
+            row = await cur.fetchone()
+            return row["click_id"] if row else None
+
     async def get_setting(self, key: str) -> str | None:
         async with self.lock:
             cur = await self._connection().execute("SELECT value FROM settings WHERE key=?", (key,))
