@@ -188,6 +188,14 @@ class Database:
                 await conn.rollback()
                 raise
 
+    async def get_analysis_usage(self, telegram_id: int) -> int:
+        async with self.lock:
+            cur = await self._connection().execute(
+                "SELECT COUNT(*) AS n FROM analyses WHERE telegram_id=? AND date(created_at)=date('now')",
+                (telegram_id,),
+            )
+            return int((await cur.fetchone())["n"])
+
     async def rollback_analysis(self, analysis_id: int) -> None:
         async with self.lock:
             await self._connection().execute("DELETE FROM analyses WHERE id=?", (analysis_id,))
