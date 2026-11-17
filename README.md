@@ -21,9 +21,9 @@ Users register with the affiliate link, and the first-deposit postback unlocks a
 
 ## Admin panel inside Telegram
 
-Send `/admin` to open the inline panel. Choose **Message texts**, then a language and one of the six messages: main menu, instructions, registration prompt/error, or deposit prompt/error. Choose **Edit text**, review the preview, then Save or Cancel. **User analytics** shows registrations, first deposits, manual access grants, active users, and analysis counts.
+Send `/admin` to open the inline panel. Choose **Message texts**, then a language and one of the six messages: main menu, instructions, registration prompt/error, or deposit prompt/error. Edit the text, add/replace/remove its photo, and Save or Cancel. **User analytics** shows registrations, first deposits, manual access grants, deposit-stage grants, active users, and analysis counts.
 
-To grant analysis access manually, choose **Grant access**, enter the user's numeric Telegram ID (they can get it with `/myid`), review the ID, and press Save. A notification is sent if the user has already started the bot. Manual access is stored separately from registration and deposit postbacks, so it does not change affiliate conversion statistics. All confirmed access grants are saved in SQLite.
+To grant full analysis access manually, choose **Full analysis access**, enter the user's numeric Telegram ID (they can get it with `/myid`), review the ID, and press Save. To move a user only to the deposit step, choose **Open deposit stage**. This does not unlock analysis or mark a registration/deposit conversion. Notifications are sent if the user has already started the bot. Both kinds of grants are recorded separately in SQLite.
 
 Confirmed message texts, Mini App address, promo code, affiliate link, access grants, and analytics source data are stored in SQLite. On Bothost, set `DB_PATH=/app/data/bot.sqlite3`; Bothost preserves `/app/data` across rebuilds. Unconfirmed editor drafts are held in memory and are discarded if the bot restarts before Save.
 
