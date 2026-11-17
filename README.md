@@ -21,7 +21,9 @@ Users register with the affiliate link, and the first-deposit postback unlocks a
 
 ## Admin panel inside Telegram
 
-Send `/admin` to open the inline panel. Choose **Texts and media**, then a language, category, and message. For each message, edit its text, attach or remove a photo, change its related button labels, or edit the registration promo code. New text, photo, link, and promo values appear in a preview and are applied only after Save; Cancel discards them. **User analytics** shows registrations, first deposits, active users, and analysis counts.
+Send `/admin` to open the inline panel. Choose **Texts and media**, then a language, category, and message. For each message, edit its text, attach or remove a photo, change its related button labels, or edit the registration promo code. New text, photo, link, and promo values appear in a preview and are applied only after Save; Cancel discards them. **User analytics** shows registrations, first deposits, manual access grants, active users, and analysis counts.
+
+To grant analysis access manually, choose **Grant access**, enter the user's numeric Telegram ID (they can get it with `/myid`), review the ID, and press Save. A notification is sent if the user has already started the bot. Manual access is stored separately from registration and deposit postbacks, so it does not change affiliate conversion statistics. All confirmed access grants are saved in SQLite.
 
 Confirmed text, image file IDs, button labels, promo code, affiliate link, and analytics source data are stored in SQLite. On Bothost, set `DB_PATH=/app/data/bot.sqlite3`; Bothost preserves `/app/data` across rebuilds. Unconfirmed editor drafts are held in memory and are discarded if the bot restarts before Save.
 
