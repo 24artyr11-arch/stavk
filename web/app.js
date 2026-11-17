@@ -12,7 +12,8 @@ const COPY = {
     choose_image: "Выбрать изображение", image_formats: "JPEG, PNG или WebP · до 10 МБ", remove_image: "Убрать",
     analyze_button: "Проанализировать купон", analyzing: "Анализируем скриншот…", choose_first: "Сначала выберите скриншот.",
     too_large: "Файл больше 10 МБ. Выберите изображение меньшего размера.", unsupported: "Поддерживаются только JPEG, PNG и WebP.",
-    result_title: "Результат анализа", disclaimer: "Уверенность ИИ (70–85%) — субъективная оценка модели, не вероятность выигрыша. При нехватке данных сигнал будет предварительным. Анализ не учитывает актуальные составы и движение коэффициентов; ставки связаны с риском потери денег.",
+    result_title: "Результат анализа", signal_pick_label: "Куда ставить", signal_confidence_label: "Уверенность ИИ", signal_reason_label: "Почему этот вариант",
+    signal_reason_missing: "Дополнительное объяснение не получено.", disclaimer: "Уверенность ИИ (70–85%) — субъективная оценка модели, не вероятность выигрыша. При нехватке данных сигнал будет предварительным. Анализ не учитывает актуальные составы и движение коэффициентов; ставки связаны с риском потери денег.",
     invalid_data: "Не удалось подтвердить Telegram. Закройте Mini App и откройте его снова из бота.",
     deposit_required: "Доступ пока не активирован. Сначала завершите регистрацию и внесите первый депозит, затем дождитесь подтверждения в боте.",
     daily_limit: "Лимит на сегодня исчерпан. Новые анализы будут доступны после 00:00 UTC.",
@@ -28,7 +29,8 @@ const COPY = {
     choose_image: "Choose an image", image_formats: "JPEG, PNG, or WebP · up to 10 MB", remove_image: "Remove",
     analyze_button: "Analyze slip", analyzing: "Analyzing screenshot…", choose_first: "Choose a screenshot first.",
     too_large: "File is over 10 MB. Choose a smaller image.", unsupported: "Only JPEG, PNG, and WebP are supported.",
-    result_title: "Analysis result", disclaimer: "AI confidence (70–85%) is a subjective model rating, not the probability of winning. With limited screenshot data, the pick is preliminary. The analysis excludes current lineups and odds movement; betting carries a risk of financial loss.",
+    result_title: "Analysis result", signal_pick_label: "Where to bet", signal_confidence_label: "AI confidence", signal_reason_label: "Why this pick",
+    signal_reason_missing: "No additional explanation was provided.", disclaimer: "AI confidence (70–85%) is a subjective model rating, not the probability of winning. With limited screenshot data, the pick is preliminary. The analysis excludes current lineups and odds movement; betting carries a risk of financial loss.",
     invalid_data: "Telegram could not be verified. Close the Mini App and reopen it from the bot.",
     deposit_required: "Access is not active yet. Complete registration and make your first deposit, then wait for confirmation in the bot.",
     daily_limit: "Today's limit is reached. Analyses reset after 00:00 UTC.",
@@ -82,6 +84,23 @@ function setStatus(message = "", isError = false) {
   const status = el("status");
   status.textContent = message;
   status.classList.toggle("error", isError);
+}
+
+function parseSignal(result) {
+  const signal = { pick: "", confidence: "", reason: "" };
+  for (const line of String(result || "").split(/\r?\n/)) {
+    const match = line.match(/^\s*([^:]+):\s*(.*)\s*$/);
+    if (!match) continue;
+    const label = match[1].trim().toLocaleUpperCase();
+    const value = match[2].trim();
+    if (["СТАВКА", "BET"].includes(label)) signal.pick = value;
+    else if (["УВЕРЕННОСТЬ ИИ", "AI CONFIDENCE", "CONFIDENCE"].includes(label)) signal.confidence = value;
+    else if (["ПОЧЕМУ", "WHY"].includes(label)) signal.reason = value;
+  }
+  if (!signal.pick) signal.pick = String(result || "").trim() || text("generic_error");
+  if (!signal.confidence) signal.confidence = "—";
+  if (!signal.reason) signal.reason = text("signal_reason_missing");
+  return signal;
 }
 
 function apiHeaders() {
@@ -196,7 +215,10 @@ analyzeButton.addEventListener("click", async () => {
     }
     remaining = Number(data.remaining) || 0;
     updateQuota();
-    el("result-text").textContent = data.result || text("generic_error");
+    const signal = parseSignal(data.result || text("generic_error"));
+    el("signal-pick-value").textContent = signal.pick;
+    el("signal-confidence-value").textContent = signal.confidence;
+    el("signal-reason-value").textContent = signal.reason;
     el("result-card").classList.remove("hidden");
     el("result-card").scrollIntoView({ behavior: "smooth", block: "start" });
     clearFile();
