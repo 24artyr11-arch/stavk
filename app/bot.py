@@ -28,7 +28,7 @@ BUTTON_KEYS = {
     "button_instruction", "button_language", "button_signal", "button_open_app",
     "button_register", "language_russian", "language_english", "button_back",
     "button_cancel", "button_admin", "button_admin_content", "button_admin_analytics",
-    "button_admin_grant_access",
+    "button_admin_grant_access", "button_admin_grant_registration_stage",
     "button_admin_settings", "button_edit_ru", "button_edit_en", "button_set_link",
     "button_set_promo", "button_text_edit", "button_edit_button_label", "button_edit_image",
     "button_remove_image", "button_edit_buttons", "button_edit_promo", "button_save",
@@ -53,7 +53,7 @@ MESSAGE_BUTTONS = {
 MEDIA_SUPPORTED_KEYS = {
     "welcome", "menu", "instruction", "choose_language", "need_registration", "need_deposit",
     "send_image", "no_link", "limit", "analyzing", "analysis_error", "image_only",
-    "risk", "registered", "activated",
+    "risk", "registered", "activated", "registration_error", "deposit_error",
 }
 
 EDITABLE_MESSAGE_KEYS = (
@@ -82,6 +82,7 @@ def admin_keyboard(lang: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=t(lang, "button_admin_content"), callback_data="admin:content")],
         [InlineKeyboardButton(text=t(lang, "button_admin_analytics"), callback_data="admin:analytics")],
         [InlineKeyboardButton(text=t(lang, "button_admin_grant_access"), callback_data="admin:grantaccess")],
+        [InlineKeyboardButton(text=t(lang, "button_admin_grant_registration_stage"), callback_data="admin:grantstage")],
         [InlineKeyboardButton(text=t(lang, "button_admin_settings"), callback_data="admin:settings")],
         [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="menu:home")],
     ])
@@ -140,17 +141,24 @@ def admin_message_picker_keyboard(lang: str, text_lang: str) -> InlineKeyboardMa
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def simple_message_editor_keyboard(lang: str, text_lang: str, key: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+def simple_message_editor_keyboard(lang: str, text_lang: str, key: str, has_media: bool) -> InlineKeyboardMarkup:
+    rows = [
         [InlineKeyboardButton(
             text=t(lang, "button_text_edit"),
             callback_data=f"admin:edittext:{text_lang}:{key}:messages",
         )],
-        [InlineKeyboardButton(
+        [InlineKeyboardButton(text=t(lang, "button_edit_image"), callback_data=f"admin:editimage:{text_lang}:{key}:messages")],
+    ]
+    if has_media:
+        rows.append([InlineKeyboardButton(
+            text=t(lang, "button_remove_image"),
+            callback_data=f"admin:removeimage:{text_lang}:{key}:messages",
+        )])
+    rows.append([InlineKeyboardButton(
             text=t(lang, "button_back"),
             callback_data=f"admin:texts:{text_lang}",
-        )],
-    ])
+        )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def send_simple_message_editor(
@@ -169,11 +177,14 @@ async def send_simple_message_editor(
     )
     if notice:
         text = f"{notice}\n\n{text}"
-    await bot.send_message(
-        user_id,
-        text,
-        reply_markup=simple_message_editor_keyboard(lang, text_lang, key),
-    )
+    file_id = await db.get_text_media(text_lang, key)
+    markup = simple_message_editor_keyboard(lang, text_lang, key, bool(file_id))
+    if file_id and len(text) <= 1024:
+        await bot.send_photo(user_id, file_id, caption=text, reply_markup=markup)
+    else:
+        if file_id:
+            await bot.send_photo(user_id, file_id, caption=text_label(lang, key))
+        await bot.send_message(user_id, text, reply_markup=markup)
 
 
 def button_picker_keyboard(lang: str, text_lang: str, parent_key: str, parent_category: str) -> InlineKeyboardMarkup:
@@ -426,7 +437,7 @@ async def show_signal_gate(bot: Bot, user_id: int, lang: str) -> None:
             ])
         await send_user_content(bot, user_id, lang, "send_image", t(lang, "send_image"), reply_markup=markup)
         return
-    if user and user["registered"]:
+    if user and (user["registered"] or user["registration_stage_granted"]):
         markup = await deposit_button(user_id, lang)
         if not markup:
             await send_user_content(bot, user_id, lang, "no_link", t(lang, "no_link"), reply_markup=main_keyboard(lang))
@@ -463,6 +474,7 @@ async def begin_admin_input(
         "webapp_url": "admin_edit_webapp_prompt",
         "media": "admin_photo_prompt",
         "grant_access": "admin_grant_access_prompt",
+        "grant_registration_stage": "admin_grant_stage_prompt",
     }.get(kind, "admin_text_edit_prompt")
     prompt = await bot.send_message(user_id, t(lang, prompt_key), reply_markup=cancel_keyboard(lang))
     pending_admin_inputs[user_id] = {
@@ -497,10 +509,13 @@ async def send_admin_return(
     if pending.get("kind") == "text" and pending.get("key") in BUTTON_KEYS:
         label = t(pending.get("target_lang", lang), pending["key"])
         notice += "\n" + format_text(lang, "admin_button_saved", value=label)
-    if pending.get("kind") == "grant_access":
+    if pending.get("kind") in ("grant_access", "grant_registration_stage"):
         await bot.send_message(user_id, notice, reply_markup=admin_keyboard(lang))
         return
     if pending.get("kind") == "text" and category == "messages" and target_lang in ("ru", "en") and key in EDITABLE_MESSAGE_KEYS:
+        await send_simple_message_editor(bot, user_id, lang, target_lang, key, notice=notice)
+        return
+    if pending.get("kind") == "media" and category == "messages" and target_lang in ("ru", "en") and key in EDITABLE_MESSAGE_KEYS:
         await send_simple_message_editor(bot, user_id, lang, target_lang, key, notice=notice)
         return
     if target_lang in ("ru", "en") and key in text_keys() and category:
@@ -528,7 +543,7 @@ async def handle_admin_text_input(message: Message, bot: Bot, pending: dict[str,
         await message.answer(t(lang, "admin_invalid_webapp"), reply_markup=cancel_keyboard(lang))
         return
     target_id = None
-    if kind == "grant_access":
+    if kind in ("grant_access", "grant_registration_stage"):
         if not value.isdecimal() or int(value) <= 0 or int(value) > (1 << 52) - 1:
             await message.answer(t(lang, "admin_invalid_telegram_id"), reply_markup=cancel_keyboard(lang))
             return
@@ -555,6 +570,9 @@ async def handle_admin_text_input(message: Message, bot: Bot, pending: dict[str,
     elif kind == "grant_access":
         pending["draft"] = str(target_id)
         preview = format_text(lang, "admin_draft_grant_access", user_id=target_id)
+    elif kind == "grant_registration_stage":
+        pending["draft"] = str(target_id)
+        preview = format_text(lang, "admin_draft_grant_stage", user_id=target_id)
     elif kind == "promo":
         preview = format_text(lang, "admin_draft_promo", draft=pending["draft"] or "—")
     elif kind == "webapp_url":
@@ -627,6 +645,28 @@ async def commit_admin_draft(bot: Bot, user_id: int, lang: str) -> bool:
             "admin_access_granted_admin",
             user_id=target_id,
             access_status=access_status,
+            delivery_status=delivery_status,
+        )
+        pending_admin_inputs.pop(user_id, None)
+        await send_admin_return(bot, user_id, lang, pending, notice)
+        return True
+    elif kind == "grant_registration_stage":
+        target_id = int(pending["draft"])
+        newly_granted = await db.grant_registration_stage(target_id, user_id)
+        target = await db.get_user(target_id)
+        target_lang = target["language"] if target and target["language"] in ("ru", "en") else "ru"
+        try:
+            await show_signal_gate(bot, target_id, target_lang)
+            delivery_status = t(lang, "admin_notification_sent")
+        except Exception:
+            log.info("Could not notify Telegram user %s about deposit-stage access", target_id, exc_info=True)
+            delivery_status = t(lang, "admin_notification_not_sent")
+        stage_status = t(lang, "admin_stage_new" if newly_granted else "admin_stage_existing")
+        notice = format_text(
+            lang,
+            "admin_stage_granted_admin",
+            user_id=target_id,
+            stage_status=stage_status,
             delivery_status=delivery_status,
         )
         pending_admin_inputs.pop(user_id, None)
@@ -715,9 +755,9 @@ async def gate_callback(callback: CallbackQuery, bot: Bot) -> None:
 
     if user and (user["deposited"] or user["access_granted"]):
         await show_signal_gate(bot, user_id, lang)
-    elif action == "registration" and user and user["registered"]:
+    elif action == "registration" and user and (user["registered"] or user["registration_stage_granted"]):
         await show_signal_gate(bot, user_id, lang)
-    elif action == "deposit" and user and user["registered"]:
+    elif action == "deposit" and user and (user["registered"] or user["registration_stage_granted"]):
         markup = await deposit_button(user_id, lang)
         if markup:
             await send_user_content(bot, user_id, lang, "deposit_error", t(lang, "deposit_error"), reply_markup=markup)
@@ -780,6 +820,8 @@ async def admin_callback(callback: CallbackQuery, bot: Bot) -> None:
         ]))
     elif action == "grantaccess":
         await begin_admin_input(bot, user_id, lang, "grant_access")
+    elif action == "grantstage":
+        await begin_admin_input(bot, user_id, lang, "grant_registration_stage")
     elif action == "settings":
         await bot.send_message(user_id, t(lang, "admin_choose_setting"), reply_markup=settings_keyboard(lang))
     elif action == "texts" and len(parts) == 3 and parts[2] in ("ru", "en"):
@@ -792,6 +834,23 @@ async def admin_callback(callback: CallbackQuery, bot: Bot) -> None:
         await send_simple_message_editor(bot, user_id, lang, parts[2], parts[3])
     elif action == "edittext" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in EDITABLE_MESSAGE_KEYS and parts[4] == "messages":
         await begin_admin_input(bot, user_id, lang, "text", parts[2], parts[3], "messages")
+    elif action == "editimage" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in EDITABLE_MESSAGE_KEYS and parts[4] == "messages":
+        await begin_admin_input(bot, user_id, lang, "media", parts[2], parts[3], "messages")
+    elif action == "removeimage" and len(parts) == 5 and parts[2] in ("ru", "en") and parts[3] in EDITABLE_MESSAGE_KEYS and parts[4] == "messages":
+        text_lang, key = parts[2], parts[3]
+        if not await db.get_text_media(text_lang, key):
+            await send_simple_message_editor(bot, user_id, lang, text_lang, key)
+        else:
+            pending_admin_inputs[user_id] = {
+                "kind": "media", "mode": "confirm", "draft": None,
+                "target_lang": text_lang, "key": key, "category": "messages",
+                "return_key": key, "return_category": "messages", "language": lang,
+            }
+            await bot.send_message(
+                user_id,
+                format_text(lang, "admin_draft_remove_image", label=text_label(lang, key)),
+                reply_markup=draft_keyboard(lang),
+            )
     elif action == "input" and len(parts) == 3 and parts[2] in ("link", "promo", "webapp_url"):
         await begin_admin_input(bot, user_id, lang, parts[2])
     elif action == "save":
