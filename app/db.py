@@ -27,6 +27,9 @@ class Database:
                 deposited INTEGER NOT NULL DEFAULT 0,
                 registered_at TEXT,
                 deposited_at TEXT,
+                access_granted INTEGER NOT NULL DEFAULT 0,
+                access_granted_at TEXT,
+                access_granted_by INTEGER,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS referrals (
@@ -63,6 +66,12 @@ class Database:
             await self.conn.execute("ALTER TABLE users ADD COLUMN registered_at TEXT")
         if "deposited_at" not in user_columns:
             await self.conn.execute("ALTER TABLE users ADD COLUMN deposited_at TEXT")
+        if "access_granted" not in user_columns:
+            await self.conn.execute("ALTER TABLE users ADD COLUMN access_granted INTEGER NOT NULL DEFAULT 0")
+        if "access_granted_at" not in user_columns:
+            await self.conn.execute("ALTER TABLE users ADD COLUMN access_granted_at TEXT")
+        if "access_granted_by" not in user_columns:
+            await self.conn.execute("ALTER TABLE users ADD COLUMN access_granted_by INTEGER")
         await self.conn.commit()
         cur = await self.conn.execute("SELECT language,key,value FROM texts")
         rows = await cur.fetchall()
@@ -94,6 +103,28 @@ class Database:
         async with self.lock:
             await self._connection().execute("UPDATE users SET language=? WHERE telegram_id=?", (language, telegram_id))
             await self._connection().commit()
+
+    async def grant_manual_access(self, telegram_id: int, admin_id: int) -> bool:
+        await self.ensure_user(telegram_id)
+        now = datetime.now(timezone.utc).isoformat()
+        async with self.lock:
+            conn = self._connection()
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                cur = await conn.execute("SELECT access_granted FROM users WHERE telegram_id=?", (telegram_id,))
+                row = await cur.fetchone()
+                await conn.execute("""
+                    UPDATE users
+                    SET access_granted=1,
+                        access_granted_at=COALESCE(access_granted_at, ?),
+                        access_granted_by=COALESCE(access_granted_by, ?)
+                    WHERE telegram_id=?
+                """, (now, admin_id, telegram_id))
+                await conn.commit()
+                return not bool(row["access_granted"])
+            except Exception:
+                await conn.rollback()
+                raise
 
     async def create_referral(self, telegram_id: int) -> str:
         from uuid import uuid4
@@ -213,9 +244,11 @@ class Database:
             conn = self._connection()
             await conn.execute("BEGIN IMMEDIATE")
             try:
-                cur = await conn.execute("SELECT deposited FROM users WHERE telegram_id=?", (telegram_id,))
+                cur = await conn.execute(
+                    "SELECT deposited,access_granted FROM users WHERE telegram_id=?", (telegram_id,)
+                )
                 row = await cur.fetchone()
-                if not row or not row["deposited"]:
+                if not row or not (row["deposited"] or row["access_granted"]):
                     await conn.rollback()
                     return False, 0, None
                 cur = await conn.execute(
@@ -252,6 +285,7 @@ class Database:
                     (SELECT COUNT(*) FROM users) AS total_users,
                     (SELECT COUNT(*) FROM users WHERE registered=1) AS registered_users,
                     (SELECT COUNT(*) FROM users WHERE deposited=1) AS deposited_users,
+                    (SELECT COUNT(*) FROM users WHERE access_granted=1) AS manual_access_users,
                     (SELECT COUNT(*) FROM users WHERE date(created_at)=date('now')) AS new_users_today,
                     (SELECT COUNT(*) FROM users WHERE date(registered_at)=date('now')) AS registrations_today,
                     (SELECT COUNT(*) FROM users WHERE date(deposited_at)=date('now')) AS deposits_today,
