@@ -3,7 +3,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 const COPY = {
   ru: {
-    eyebrow: "АНАЛИЗ КУПОНА", title: "AI анализ ставки", language_label: "Язык",
+    eyebrow: "СПОРТИВНАЯ АНАЛИТИКА", title: "AI анализ ставки", language_label: "Язык",
     quota_label: "Анализы сегодня", quota_loading: "Загрузка…", quota: "Осталось: {remaining} из {limit}",
     sport_title: "Выберите вид спорта", sport_help: "Укажите спорт, который указан в купоне.", sport_label: "Вид спорта", sport_select: "Выберите вид спорта",
     sport_football: "Футбол", sport_basketball: "Баскетбол", sport_hockey: "Хоккей", sport_tennis: "Теннис",
@@ -19,7 +19,7 @@ const COPY = {
     generic_error: "Не удалось выполнить анализ. Попробуйте ещё раз.", language_error: "Не удалось сохранить язык.",
   },
   en: {
-    eyebrow: "SLIP ANALYSIS", title: "AI Bet Analysis", language_label: "Language",
+    eyebrow: "SPORTS ANALYSIS", title: "AI Bet Analysis", language_label: "Language",
     quota_label: "Analyses today", quota_loading: "Loading…", quota: "Remaining: {remaining} of {limit}",
     sport_title: "Choose a sport", sport_help: "Select the sport shown on the slip.", sport_label: "Sport", sport_select: "Choose a sport",
     sport_football: "Football", sport_basketball: "Basketball", sport_hockey: "Hockey", sport_tennis: "Tennis",
@@ -134,7 +134,7 @@ async function initialize() {
   if (tg) {
     tg.ready();
     tg.expand();
-    try { tg.setHeaderColor("#10151f"); tg.setBackgroundColor("#10151f"); } catch (_) { /* optional Telegram UI methods */ }
+    try { tg.setHeaderColor("#071a12"); tg.setBackgroundColor("#071a12"); } catch (_) { /* optional Telegram UI methods */ }
   }
   try {
     const response = await fetch("/api/me", { headers: apiHeaders() });
