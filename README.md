@@ -21,7 +21,9 @@ Users register with the affiliate link, and the first-deposit postback unlocks a
 
 ## Admin panel inside Telegram
 
-Send `/admin` to open the inline panel. Its buttons appear under the message. The previous panel message is deleted when you select a section. You can edit the referral link, promo code, and built-in Russian and English bot copy. The `/myid` command shows the Telegram ID required for `ADMIN_IDS`.
+Send `/admin` to open the inline panel. Choose **Texts and media**, then a language, category, and message. For each message, edit its text, attach or remove a photo, change its related button labels, or edit the registration promo code. New text, photo, link, and promo values appear in a preview and are applied only after Save; Cancel discards them. **User analytics** shows registrations, first deposits, active users, and analysis counts.
+
+Confirmed text, image file IDs, button labels, promo code, affiliate link, and analytics source data are stored in SQLite. On Bothost, set `DB_PATH=/app/data/bot.sqlite3`; Bothost preserves `/app/data` across rebuilds. Unconfirmed editor drafts are held in memory and are discarded if the bot restarts before Save.
 
 The bot can accept the base affiliate link as shown in the 1win panel and automatically append a unique `sub1` for each user. If the URL template already contains `sub1={click_id}` (or `{sub1}`), it substitutes the unique ID there. Configure the postback message in the format `{sub1}|Firstdep|{amount}`; registration events may use `Registration` or `Reg`. Verify these labels and the returned `sub1` with test events before live use.
 
