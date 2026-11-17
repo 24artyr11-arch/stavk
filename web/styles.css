@@ -93,6 +93,16 @@ h1 { margin-bottom: 0; font-size: 18px; font-weight: 850; letter-spacing: .015em
 .result-check { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 9px 9px 9px 3px; color: #101114; background: var(--accent); font-size: 14px; font-weight: 900; }
 .result-title h2 { margin: 0; }
 .result-text { margin: 0; color: #e4e6e9; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.signal-fields { display: grid; gap: 10px; }
+.signal-box { min-width: 0; padding: 13px 15px; border: 1px solid rgba(220, 224, 230, .16); border-radius: 14px; background: linear-gradient(135deg, rgba(35, 37, 42, .84), rgba(20, 21, 25, .88)); }
+.signal-pick-box { border-left: 3px solid #e1e3e6; }
+.signal-confidence-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-color: rgba(220, 224, 230, .25); background: linear-gradient(110deg, rgba(47, 49, 55, .82), rgba(25, 27, 31, .9)); }
+.signal-box-label { margin: 0 0 6px; color: #aeb2b9; font-size: 10px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+.signal-confidence-box .signal-box-label { margin: 0; }
+.signal-pick-value, .signal-reason-value { margin: 0; overflow-wrap: anywhere; }
+.signal-pick-value { font-size: 16px; font-weight: 850; line-height: 1.4; }
+.signal-confidence-value { margin: 0; color: #f1f2f4; font-size: 24px; font-weight: 900; letter-spacing: -.035em; line-height: 1; }
+.signal-reason-value { color: #d5d7dc; font-size: 13px; line-height: 1.5; }
 .disclaimer { display: flex; gap: 9px; margin: 17px 3px 0; color: var(--muted); }
 .disclaimer span { color: var(--accent); font-size: 14px; }
 .disclaimer p { margin: 0; font-size: 10px; line-height: 1.55; }
