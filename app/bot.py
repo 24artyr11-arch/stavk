@@ -9,6 +9,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
+    WebAppInfo,
 )
 
 from app.ai_analysis import analyze_screenshot
@@ -148,7 +149,16 @@ async def referral_button(user_id: int, lang: str):
 async def show_signal_gate(bot: Bot, user_id: int, lang: str) -> None:
     user = await db.get_user(user_id)
     if user and user["deposited"]:
-        await bot.send_message(user_id, t(lang, "send_image"), reply_markup=main_keyboard(lang))
+        markup = None
+        if settings.webapp_url:
+            markup = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=t(lang, "button_open_app"),
+                    web_app=WebAppInfo(url=settings.webapp_url),
+                )],
+                [InlineKeyboardButton(text=t(lang, "button_back"), callback_data="menu:home")],
+            ])
+        await bot.send_message(user_id, t(lang, "send_image"), reply_markup=markup or main_keyboard(lang))
         return
     if user and user["registered"]:
         await bot.send_message(user_id, t(lang, "need_deposit"), reply_markup=main_keyboard(lang))
