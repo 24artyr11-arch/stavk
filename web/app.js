@@ -134,7 +134,7 @@ async function initialize() {
   if (tg) {
     tg.ready();
     tg.expand();
-    try { tg.setHeaderColor("#071a12"); tg.setBackgroundColor("#071a12"); } catch (_) { /* optional Telegram UI methods */ }
+    try { tg.setHeaderColor("#08090b"); tg.setBackgroundColor("#08090b"); } catch (_) { /* optional Telegram UI methods */ }
   }
   try {
     const response = await fetch("/api/me", { headers: apiHeaders() });
