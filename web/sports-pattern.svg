@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="620" viewBox="0 0 540 620" fill="none">
+  <g stroke="#c5c9d0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".48">
+    <!-- Faint pitch markings -->
+    <path d="M18 42h504v536H18zM18 310h504M270 42v536" stroke-opacity=".28"/>
+    <circle cx="270" cy="310" r="74" stroke-opacity=".28"/>
+    <path d="M18 184h66v252H18m504-252h-66v252h66M18 242h28v136H18m504-136h-28v136h28" stroke-opacity=".25"/>
+    <!-- Football -->
+    <circle cx="118" cy="147" r="38"/>
+    <path d="m118 128 15 11-6 18h-18l-6-18 15-11Zm-15 11-17-6m23-6-4-18m28 41 17 10m-23 3 4 19m-29-25-17 12m-4-36-11-15"/>
+    <!-- Basketball -->
+    <circle cx="435" cy="493" r="41"/>
+    <path d="M435 452c-16 20-23 45-22 82m22-82c16 20 23 45 22 82m-59-41h74m-68-26c22 10 42 10 62 0m-62 52c22-10 42-10 62 0"/>
+    <!-- Player in motion -->
+    <circle cx="378" cy="178" r="17"/>
+    <path d="m366 197-21 41 25 24 23-34 24 8m-72 2-38 22-21-17m82 0-22 48-34 27m35-27 39 33 32-10m-65-96 37-18 29 15m-57 34 40 10"/>
+    <path d="m293 254-10 10 15 12m116 39 11 5-6 14-15-5"/>
+    <!-- Tennis racket and ball -->
+    <ellipse cx="105" cy="476" rx="29" ry="40" transform="rotate(28 105 476)"/>
+    <path d="m124 507 41 54m-80-95 41 20m-50-2 41 20m-32-38 41 20m-29-39 42 20m-25-42 42 20m-50 53 22-44m-6 58 22-44m-40 31 22-44m-6 58 22-44"/>
+    <circle cx="186" cy="552" r="8"/>
+    <!-- Hockey stick and puck -->
+    <path d="m342 448 91-96m-91 96-18 29 43 9 12-13m-71 46h54"/>
+    <ellipse cx="367" cy="567" rx="24" ry="6"/>
+  </g>
+</svg>
+
