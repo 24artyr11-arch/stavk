@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#08090b">
   <title>AI анализ ставки</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20261117-monochrome">
+  <link rel="stylesheet" href="/static/styles.css?v=20261117-signal-cards">
   <script src="https://telegram.org/js/telegram-web-app.js?65"></script>
-  <script defer src="/static/app.js?v=20261117-monochrome"></script>
+  <script defer src="/static/app.js?v=20261117-signal-cards"></script>
 </head>
 <body>
   <main class="shell">
@@ -102,7 +102,20 @@
         <span class="result-check" aria-hidden="true">✓</span>
         <h2 data-i18n="result_title">Результат анализа</h2>
       </div>
-      <p id="result-text" class="result-text"></p>
+      <div class="signal-fields">
+        <section class="signal-box signal-pick-box">
+          <p class="signal-box-label" data-i18n="signal_pick_label">Куда ставить</p>
+          <p id="signal-pick-value" class="signal-pick-value"></p>
+        </section>
+        <section class="signal-box signal-confidence-box">
+          <p class="signal-box-label" data-i18n="signal_confidence_label">Уверенность ИИ</p>
+          <p id="signal-confidence-value" class="signal-confidence-value"></p>
+        </section>
+        <section class="signal-box signal-reason-box">
+          <p class="signal-box-label" data-i18n="signal_reason_label">Почему этот вариант</p>
+          <p id="signal-reason-value" class="signal-reason-value"></p>
+        </section>
+      </div>
     </section>
 
     <footer class="disclaimer">
