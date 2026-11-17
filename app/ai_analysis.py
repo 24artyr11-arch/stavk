@@ -14,7 +14,12 @@ SYSTEM_PROMPT = """
 """.strip()
 
 
-async def analyze_screenshot(image: bytes, mime_type: str, language: str) -> str:
+async def analyze_screenshot(
+    image: bytes,
+    mime_type: str,
+    language: str,
+    sport: str | None = None,
+) -> str:
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     image_uri = f"data:{mime_type};base64,{base64.b64encode(image).decode('ascii')}"
     language_name = "English" if language == "en" else "Russian"
@@ -24,7 +29,13 @@ async def analyze_screenshot(image: bytes, mime_type: str, language: str) -> str
         input=[{
             "role": "user",
             "content": [
-                {"type": "input_text", "text": f"Analyze this betting slip screenshot. Reply in {language_name}."},
+                {
+                    "type": "input_text",
+                    "text": (
+                        f"Analyze this betting slip screenshot. Reply in {language_name}. "
+                        + (f"The user selected this sport: {sport}. Use it as context, but if the visible slip appears to concern another sport, point out the mismatch. " if sport else "If the sport is unclear, do not guess. ")
+                    ),
+                },
                 {"type": "input_image", "image_url": image_uri, "detail": "high"},
             ],
         }],
