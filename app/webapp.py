@@ -87,7 +87,7 @@ async def api_me(request: web.Request) -> web.Response:
     used = await db.get_analysis_usage(user_id)
     return web.json_response({
         "language": user["language"],
-        "authorized": bool(user["deposited"]),
+        "authorized": bool(user["deposited"] or user["access_granted"]),
         "remaining": max(0, settings.daily_analysis_limit - used),
         "limit": settings.daily_analysis_limit,
     })
@@ -123,7 +123,7 @@ async def api_analyze(request: web.Request) -> web.Response:
     if failure:
         return failure
     user_id = int(user["telegram_id"])
-    if not user["deposited"]:
+    if not (user["deposited"] or user["access_granted"]):
         return error_response("Analysis access is not active yet.", "deposit_required", 403)
 
     try:
@@ -146,7 +146,7 @@ async def api_analyze(request: web.Request) -> web.Response:
     allowed, used, analysis_id = await db.reserve_analysis(user_id, settings.daily_analysis_limit)
     if not allowed:
         current_user = await db.get_user(user_id)
-        if not current_user or not current_user["deposited"]:
+        if not current_user or not (current_user["deposited"] or current_user["access_granted"]):
             return error_response("Analysis access is not active yet.", "deposit_required", 403)
         return web.json_response({
             "error": "Daily analysis limit reached.",
